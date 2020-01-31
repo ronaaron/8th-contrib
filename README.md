@@ -1,4 +1,4 @@
-Samples should be added to this directory, in a subdirectory which makes
-topical sense.
+This repo is intended as a place for users of the [“8th” programming
+language](https://8th-dev.com) to contribute and share code, snippets, and libraries.
 
-For example, if you add a minesweeper game, put it in “games/minesweeper”.
+Please be respectful, and enjoy!
