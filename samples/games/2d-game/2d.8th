@@ -1,0 +1,605 @@
+\
+\ Simple 2d-game
+\
+"gfx/title.png"    app:asset img:new var, title-img
+"gfx/player1.png"  app:asset img:new var, player1-img
+"gfx/player2.png"  app:asset img:new var, player2-img
+"gfx/pmissile.png" app:asset img:new var, pmissile-img
+"gfx/alien1.png"   app:asset img:new var, alien1-img
+"gfx/alien2.png"   app:asset img:new var, alien2-img
+"gfx/amissile.png" app:asset img:new var, amissile-img
+
+
+needs nk/gui
+
+
+800 constant WIDTH
+600 constant HEIGHT
+
+32 constant TOP
+
+32 constant SPACEBAR
+
+\ Game states.
+0 constant GAME-TITLE
+1 constant GAME-ON
+2 constant GAME-GET-READY
+3 constant GAME-OVER
+
+var game-state
+
+32 constant PLAYER-WIDTH
+56 constant PLAYER-HEIGHT
+
+16 constant MISSILE-WIDTH
+32 constant MISSILE-HEIGHT
+
+32 constant ALIEN-WIDTH
+56 constant ALIEN-HEIGHT
+
+0  constant NONE
+-1 constant LEFT
+1  constant RIGHT
+-1 constant UP
+1  constant DOWN
+
+0 constant PLAYER-MISSILE
+1 constant ALIEN-MISSILE
+
+10 constant MAX-MOMENTUM
+
+0.5  constant STATE-DELAY
+0.25 constant ANIM-DELAY
+0.02 constant MOVE-DELAY
+1    constant MISSILE-DELAY
+
+
+\ Possible alien states
+0 constant HOVER-STATE
+1 constant SHOOT-STATE
+2 constant DIVE-STATE
+
+3 constant LAST-STATE
+5 constant CHANCES
+
+[ ` HOVER-STATE ` , ` HOVER-STATE ` , ` DIVE-STATE ` ,
+  ` HOVER-STATE ` , ` HOVER-STATE ` , ` DIVE-STATE ` ,
+  ` SHOOT-STATE ` , ` HOVER-STATE ` , ` DIVE-STATE ` ,
+  ` SHOOT-STATE ` , ` HOVER-STATE ` , ` DIVE-STATE ` ,
+  ` DIVE-STATE `  , ` HOVER-STATE ` , ` SHOOT-STATE ` ] var, state-table
+
+0.01 constant DT
+
+var frame-time
+var accumulator
+var new-time
+var current-time
+
+var player-img
+var player-x
+var player-y
+var player-missile-delay
+var player-animation-delay
+
+var level
+var score
+var lives
+
+a:new var, missiles
+a:new var, aliens
+
+var alien-img
+var alien-animation-delay
+var alien-movement-delay
+var alien-state-delay
+
+var get-ready-time
+
+: secs
+  d:ticks d:ticks/sec n:/ ;
+
+: draw-filled-circle  \ [x y] r c --
+  >r >r
+  ( r@ n:- ) a:map
+  a:open r> 2 n:* dup 4 a:close r> nk:fill-circle ;
+
+: update-timers
+  DT n:neg >r
+  r@ player-missile-delay n:+!
+  r@ player-animation-delay n:+!
+  r@ alien-animation-delay n:+!
+  r@ alien-movement-delay n:+!
+  r> alien-state-delay n:+! ;
+
+25 constant N-STARS
+
+var stars
+
+
+: init-stars
+  a:new
+  ( rand-pcg n:abs WIDTH n:mod
+    rand-pcg n:abs HEIGHT n:mod
+    2 a:close a:push
+  ) N-STARS times stars ! ;
+
+
+: update-stars
+  stars @
+  ( a:open
+    n:1+ dup HEIGHT n:1- n:> if
+      2drop
+      rand-pcg n:abs WIDTH n:mod
+      0 2 a:close
+    else
+      2 a:close
+    then ) a:map= drop ;
+
+
+: draw-background
+  stars @
+  (
+    1 "white" draw-filled-circle
+  ) a:each! drop
+  update-stars ;
+
+
+: init-player
+  player1-img @ player-img !
+  ANIM-DELAY player-animation-delay !
+  WIDTH n:1- 2 n:/ PLAYER-WIDTH 2 n:/ n:- player-x !
+  HEIGHT n:1- PLAYER-HEIGHT n:- player-y !
+  0 player-missile-delay ! ;
+
+
+: draw-player
+   player-x @ player-y @ PLAYER-WIDTH PLAYER-HEIGHT 4 a:close player-img @ "white" nk:draw-image ;
+
+
+: add-missile  \ missiles type x y dx dy -- missiles
+  m:new "dy" rot m:!
+  "dx" rot m:!
+  "y" rot m:!
+  "x" rot m:!
+  "type" rot m:!
+  a:push ;
+
+
+: add-alien  \ aliens x y state -- aliens
+  m:new "state" rot dup >r m:!
+  "last-state" r> m:!
+  "y" rot m:!
+  "x" rot m:!
+  "dx" 0 m:!
+  "dy" 0 m:!
+  "momentum" 0 m:!
+  "missile-delay" 0 m:!
+  a:push ;
+
+
+: init-aliens
+  ANIM-DELAY alien-animation-delay !
+  MOVE-DELAY alien-movement-delay !
+  STATE-DELAY alien-state-delay !
+  alien1-img @ alien-img !
+
+  aliens @ a:clear
+  ( ALIEN-WIDTH 2 n:* n:* n:1+ TOP HOVER-STATE add-alien
+  ) 0 12 loop drop ;
+
+
+: regroup-aliens
+  1 >r
+  aliens @
+  ( "x" r@ m:!
+    "y" TOP m:!
+    "momentum" 0 m:!
+    "dx" 0 m:!
+    "dy" 0 m:!
+    "missile-delay" 0 m:!
+    "last-state" HOVER-STATE m:!
+    "state" HOVER-STATE m:!
+    r> ALIEN-WIDTH 2 n:* n:+ >r
+  ) a:map= drop rdrop
+  ANIM-DELAY alien-animation-delay !
+  MOVE-DELAY alien-movement-delay !
+  STATE-DELAY alien-state-delay ! ;
+
+
+: check-missile-collision  \ missile -- missile/null
+  "x" m:@ dup MISSILE-WIDTH n:+ player-x @ n:< not swap
+  player-x @ PLAYER-WIDTH n:+ n:> not and swap
+  "y" m:@ dup MISSILE-HEIGHT n:+ player-y @ n:< not swap
+  player-y @ PLAYER-HEIGHT n:+ n:> not and rot and
+  swap "type" m:@ ALIEN-MISSILE n:= rot and if
+    drop
+    -1 lives n:+!
+    null
+    ;;
+  then
+
+  >r
+  aliens @ a:len swap
+  (
+    "x" m:@   r@ "x" m:@ nip dup >r  MISSILE-WIDTH n:+ n:> not swap
+    "x" m:@ ALIEN-WIDTH n:+      r>   n:< not rot and swap
+
+    "y" m:@   r@ "y" m:@ nip dup >r  MISSILE-HEIGHT n:+ n:> not rot and swap
+    "y" m:@ ALIEN-HEIGHT n:+     r>   n:< not rot and
+
+    r@ "type" m:@ nip PLAYER-MISSILE n:= and
+
+    if
+      drop
+      1 score n:+!
+      null
+    then
+  ) a:map=
+
+  ( null? nip not ) a:filter
+  a:len swap aliens !
+
+  n:- if
+    rdrop
+    null
+  else
+    r>
+  then ;
+
+: move-missiles
+  lives @
+  missiles @
+  ( "dy" m:@ swap "y" m:@ rot n:+ "y" m:_!
+    "y" m:@ 0 n:< swap "y" m:@ HEIGHT MISSILE-HEIGHT n:- n:> rot or if
+      drop
+      null
+    then
+    null? not if
+      check-missile-collision
+    then
+  ) a:map= ( null? nip not ) a:filter missiles !
+  lives @ n:> if
+    lives @ not if
+      GAME-OVER game-state !
+    else
+      regroup-aliens
+      missiles @ a:clear drop
+      init-player
+      secs 2 n:+ get-ready-time !
+      GAME-GET-READY game-state !
+    then
+  then
+
+  aliens @ a:len nip not if
+    1 level n:+!
+    init-aliens
+    missiles @ a:clear drop
+    init-player
+    secs 2 n:+ get-ready-time !
+    GAME-GET-READY game-state !
+  then ;
+
+: draw-missiles
+  missiles @
+  ( "type" m:@ PLAYER-MISSILE n:= if
+      pmissile-img @
+    else
+      amissile-img @
+    then
+    swap "x" m:@ swap "y" m:@ nip MISSILE-WIDTH MISSILE-HEIGHT 4 a:close swap "white" nk:draw-image
+  ) a:each! drop ;
+
+ : draw-aliens  \  g -- g
+   aliens @
+  ( "x" m:@ swap "y" m:@ nip PLAYER-WIDTH PLAYER-HEIGHT 4 a:close alien-img @ "white" nk:draw-image
+  ) a:each! drop ;
+
+: check-alien-collision  \ alien -- alien/null
+  "x" m:@ dup ALIEN-WIDTH n:+ player-x @ n:< not swap
+  player-x @ PLAYER-WIDTH n:+ n:> not and swap
+  "y" m:@ dup ALIEN-HEIGHT n:+ player-y @ n:< not swap
+  player-y @ PLAYER-HEIGHT n:+ n:> not and rot and if
+    drop
+    -1 lives n:+!
+    null
+    break
+  then ;
+
+: within-sights  \ alien -- alien bool
+  "x" m:@ player-x @ 31 n:- player-x @ 31 n:+ n:between ;
+
+: update-alien-state  \ alien -- alien
+  "state" m:@ >r "last-state" r@ m:!
+  "state" state-table @ rand-pcg n:abs CHANCES n:mod LAST-STATE n:* r> n:+ a:@ nip m:! ;
+
+: alien-shoot
+  within-sights swap "missile-delay" m:@ swap >r secs n:< and if
+    missiles @ ALIEN-MISSILE r@ "x" m:@ MISSILE-WIDTH 2 n:/ n:+ swap "y" m:@ nip ALIEN-HEIGHT n:+ NONE DOWN add-missile drop
+  then
+  r> "missile-delay" secs n:1+ m:! ;
+
+: alien-dive
+  "last-state" m:@ DIVE-STATE n:= not if
+    "dx" m:@ 1 n:band if
+      "dy" DOWN m:!
+    else
+      "dy" UP m:!
+    then
+  then
+
+  "x" m:@ player-x @ n:< not if
+    "momentum" m:@ LEFT n:+ "momentum" swap m:!
+  else
+    "momentum" m:@ RIGHT n:+ "momentum" swap m:!
+  then
+
+  "momentum" m:@ MAX-MOMENTUM n:> if
+    "momentum" MAX-MOMENTUM m:!
+  then
+
+  "momentum" m:@ MAX-MOMENTUM n:neg n:< if
+    "momentum" MAX-MOMENTUM n:neg m:!
+  then
+
+  "momentum" m:@ 0 n:> if
+    "dx" RIGHT m:!
+  else
+    "dx" LEFT m:!
+  then
+
+  "dy" m:@ swap "y" m:@ rot n:+ dup TOP n:< swap HEIGHT ALIEN-HEIGHT n:- n:> or if
+    "dy" m:@ n:neg "dy" swap m:!
+  then
+
+  "dx" m:@ swap "x" m:@ rot n:+ dup 0 n:< swap WIDTH ALIEN-WIDTH n:- n:> or if
+    "dx" m:@ n:neg "dx" swap m:!
+  then
+
+  "dy" m:@ swap "y" m:@ rot n:+ "y" swap m:!
+  "dx" m:@ swap "x" m:@ rot n:+ "x" swap m:! ;
+
+: move-alien  \ alien -- alien/null
+  "state" m:@
+  [ ' noop , ' alien-shoot , ' alien-dive ] swap
+  caseof
+  check-alien-collision  ;
+
+: init-game
+  1 level !
+  0 score !
+  3 lives !
+  init-stars
+  init-aliens
+  missiles @ a:clear drop
+  init-player
+  secs 2 n:+ get-ready-time !
+  GAME-GET-READY game-state ! ;
+
+: title-menu
+    nk:menubar-begin
+      \ inside it you use the normal layout words.  The 'columns' here are the
+      \ number of menu items on the bar:
+      nk:STATIC 25 2 nk:layout-row-begin
+        90 nk:layout-row-push
+          "Game" nk:TEXT_LEFT [120,200] nk:menu-begin if
+            25 1 nk:layout-row-dynamic
+              "New" nk:TEXT_LEFT ' init-game nk:menu-item-label
+              "Quit" nk:TEXT_LEFT ' bye nk:menu-item-label
+          nk:menu-end then
+    nk:menubar-end ;
+
+: game-menu
+    nk:menubar-begin
+      \ inside it you use the normal layout words.  The 'columns' here are the
+      \ number of menu items on the bar:
+      nk:STATIC 25 2 nk:layout-row-begin
+        90 nk:layout-row-push
+          "Game" nk:TEXT_LEFT [120,200] nk:menu-begin if
+            25 1 nk:layout-row-dynamic
+              "New" nk:TEXT_LEFT ' init-game nk:menu-item-label
+              "Quit" nk:TEXT_LEFT ' bye nk:menu-item-label
+          nk:menu-end then
+        600 nk:layout-row-push
+          score @ level @ lives @ "Lives: %2d        Level: %3d         Score:  %d" s:strfmt nk:TEXT_CENTERED "white" nk:label-colored
+    nk:menubar-end ;
+
+: draw-title
+  title-menu
+  [0,0,800,600] title-img @ "white" nk:draw-image ;
+
+: draw-game
+  game-menu
+  draw-background
+  draw-player
+  draw-aliens
+  draw-missiles ;
+
+: draw-get-ready
+  game-menu
+  draw-background
+  draw-player
+  draw-aliens
+  nk:win-high 1 n:* 1 nk:layout-row-dynamic
+  "GET READY!" nk:TEXT_CENTERED "white" nk:label-colored ;
+
+: draw-gameover
+  game-menu
+  draw-background
+  draw-aliens
+  draw-missiles
+  nk:win-high 1 n:* 1 nk:layout-row-dynamic
+  "GAME OVER!" nk:TEXT_CENTERED "white" nk:label-colored ;
+
+: update-get-ready
+  player-animation-delay @ 0 n:> not if
+    player-img @ player1-img @ same? if
+      player2-img @ player-img !
+    else
+      player1-img @ player-img !
+    then
+    ANIM-DELAY player-animation-delay !
+  then
+
+  alien-animation-delay @ 0 n:> not if
+    alien-img @ alien1-img @ same? if
+      alien2-img @ alien-img !
+    else
+      alien1-img @ alien-img !
+    then
+    ANIM-DELAY alien-animation-delay !
+  then
+
+  secs get-ready-time @ n:< not if
+    GAME-ON game-state !
+  then
+
+  update-timers ;
+
+
+: update-game
+  update-timers
+
+   SPACEBAR nk:key-down? if
+    player-missile-delay @ 0 n:> not if
+      missiles @ PLAYER-MISSILE player-x @ MISSILE-WIDTH 2 n:/ n:+ player-y @ MISSILE-HEIGHT n:- 0 -1 add-missile drop
+      MISSILE-DELAY player-missile-delay !
+    then
+  then
+  nk:KEY_LEFT nk:key-down? if
+    player-x @ 1 n:- player-x !
+    player-x @ 0 n:< if
+      0 player-x !
+    then
+  then
+  nk:KEY_RIGHT nk:key-down? if
+    player-x @ 1 n:+ player-x !
+    player-x @ PLAYER-WIDTH n:+ WIDTH n:1- n:> if
+      WIDTH n:1- PLAYER-WIDTH n:- player-x !
+    then
+  then
+  nk:KEY_UP key-down? if
+    player-y @ 1 n:- player-y !
+    player-y @ TOP n:< if
+      TOP player-y !
+    then
+  then
+  nk:KEY_DOWN nk:key-down? if
+    player-y @ 1 n:+ player-y !
+    player-y @ PLAYER-HEIGHT n:+ HEIGHT n:1- n:> if
+      HEIGHT n:1- PLAYER-HEIGHT n:- player-y !
+    then
+  then
+
+  player-animation-delay @ 0 n:> not if
+    player-img @ player1-img @ same? if
+      player2-img @ player-img !
+    else
+      player1-img @ player-img !
+    then
+    ANIM-DELAY player-animation-delay !
+  then
+
+  move-missiles
+
+  alien-movement-delay @ 0 n:> not if
+    aliens @ a:len swap ' move-alien a:map= ( null? nip not ) a:filter a:len swap aliens ! n:> if
+      aliens @ a:len nip not if
+        1 level n:+!
+        init-aliens
+        missiles @ a:clear drop
+        init-player
+        secs 2 n:+ get-ready-time !
+        GAME-GET-READY game-state !
+      else
+        regroup-aliens
+        missiles @ a:clear drop
+        init-player
+        secs 2 n:+ get-ready-time !
+        GAME-GET-READY game-state !
+      then
+      lives @ not if
+        GAME-OVER game-state !
+      then
+    then
+    MOVE-DELAY alien-movement-delay !
+  then
+
+  alien-animation-delay @ 0 n:> not if
+    alien-img @ alien1-img @ same? if
+      alien2-img @ alien-img !
+    else
+      alien1-img @ alien-img !
+    then
+    ANIM-DELAY alien-animation-delay !
+  then
+
+  alien-state-delay @ 0 n:> not if
+    aliens @ ' update-alien-state a:map= drop
+    STATE-DELAY alien-state-delay !
+  then ;
+
+\ Delta timing routine.
+\ Uses fixed time step for update.
+\ Skips render frames if needed to keep up with the pace.
+: event-loop
+  secs new-time !
+  new-time @ current-time @ n:- frame-time !
+  new-time @ current-time !
+  frame-time @ accumulator n:+!
+  repeat
+    accumulator @ DT n:< if
+      break
+    else
+      [ ' noop , ' update-game , ' update-get-ready , ' noop ,  ' noop ] game-state @
+      caseof
+      accumulator @ DT n:- accumulator !
+    then
+  again
+  [ ' draw-title , ' draw-game , ' draw-get-ready , ' draw-gameover ] game-state @
+  caseof ;
+
+var font1
+
+: new-win
+  {
+    name: "main",
+    wide: 800,
+    high: 600,
+    bg: "palegreen",
+    fonts: {
+      font2: ["tahoma:24", "arial:24", "ubuntu:24"]
+    },
+    font: "font1",
+    title: "8th Nuklear 2D-game"
+  }
+  \ because we load font1 after this bit is compiled, we'll load it directly
+  "fonts" m:@
+    "font1" font1 @ m:!
+    drop
+
+  \ invoke nk:win to create the outermost window from the JSON definition:
+  nk:win ;
+
+: main-render
+  {
+    bg: "black",
+    font: "font2",
+    padding: [0,0],
+    flags: [ @nk:WINDOW_NO_SCROLLBAR ]
+  }
+
+  nk:begin
+    event-loop
+  nk:end ;
+
+: app:main
+  \ in order to be cross-platform, let's use a system font chosen by our library:
+  font:system 0 a:_@
+  \ let it be 16 pixels high. Font string format is "/path/to/font.ttf:pixelsize".
+  \ There are other acceptable inputs to font:new, see the documentation:
+  "%s:16" s:strfmt font:new font1 !
+  new-win
+  GAME-TITLE game-state !
+  secs current-time !
+  accumulator off
+  ' main-render 200 nk:render-loop ;
