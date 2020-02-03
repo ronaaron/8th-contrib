@@ -1,9 +1,6 @@
 \
 \  Simple Minesweeper game for 8th
 \
-\ TODO: Add difficulty selection into menu.
-\
-\
 "gfx/n0.png"         app:asset img:new var, zero-img
 "gfx/n1.png"         app:asset img:new var, one-img
 "gfx/n2.png"         app:asset img:new var, two-img
@@ -36,6 +33,12 @@ var mines
 25 constant HARD
 
 NORMAL var, difficulty
+
+0 constant EASY-MENU
+1 constant NORMAL-MENU
+2 constant HARD-MENU
+
+NORMAL-MENU var, difficulty-selection
 
 10 constant BRDSZ
 BRDSZ 2 n:+ constant BRDSZI
@@ -293,16 +296,41 @@ locals:
 : draw-tiles
   ( "y" w:! ( dup "x" w:! "y" w:@ draw-board @ mat:@ nip drawtable @ swap caseof ) 1 BRDSZ loop ) 1 BRDSZ loop ;
 
+: easy-menu
+  "Difficulty" nk:TEXT_LEFT [200,200] nk:menu-begin if
+     25 1 nk:layout-row-dynamic
+     "Easy" nk:TEXT_CENTERED mine-img @ ( EASY difficulty ! init-board EASY-MENU difficulty-selection ! false handle-click ! ) nk:menu-item-image
+     "Normal" nk:TEXT_CENTERED ( NORMAL difficulty ! init-board NORMAL-MENU difficulty-selection ! false handle-click ! ) nk:menu-item-label
+     "Hard" nk:TEXT_CENTERED ( HARD difficulty ! init-board HARD-MENU difficulty-selection ! false handle-click ! ) nk:menu-item-label
+   nk:menu-end then ;
+
+: normal-menu
+  "Difficulty" nk:TEXT_LEFT [200,200] nk:menu-begin if
+     25 1 nk:layout-row-dynamic
+     "Easy" nk:TEXT_CENTERED ( EASY difficulty ! init-board EASY-MENU difficulty-selection ! false handle-click ! ) nk:menu-item-label
+     "Normal" nk:TEXT_CENTERED mine-img @ ( NORMAL difficulty ! init-board NORMAL-MENU difficulty-selection ! false handle-click ! ) nk:menu-item-image
+     "Hard" nk:TEXT_CENTERED ( HARD difficulty ! init-board HARD-MENU difficulty-selection ! false handle-click ! ) nk:menu-item-label
+   nk:menu-end then ;
+
+: hard-menu
+  "Difficulty" nk:TEXT_LEFT [200,200] nk:menu-begin if
+     25 1 nk:layout-row-dynamic
+     "Easy" nk:TEXT_CENTERED ( EASY difficulty ! init-board EASY-MENU difficulty-selection ! false handle-click ! ) nk:menu-item-label
+     "Normal" nk:TEXT_CENTERED ( NORMAL difficulty ! init-board NORMAL-MENU difficulty-selection ! false handle-click ! ) nk:menu-item-label
+     "Hard" nk:TEXT_CENTERED mine-img @ ( HARD difficulty ! init-board HARD-MENU difficulty-selection ! false handle-click ! ) nk:menu-item-image
+   nk:menu-end then ;
+
 : game-menu
     nk:menubar-begin
-      nk:STATIC 25 2 nk:layout-row-begin
+      nk:STATIC 25 3 nk:layout-row-begin
         90 nk:layout-row-push
           "Game" nk:TEXT_LEFT [120,200] nk:menu-begin if
             25 1 nk:layout-row-dynamic
               "New" nk:TEXT_LEFT ( init-board  false handle-click ! )  nk:menu-item-label
               "Quit" nk:TEXT_LEFT ' bye nk:menu-item-label
           nk:menu-end then
-        294 nk:layout-row-push
+        [ ' easy-menu , ' normal-menu , ' hard-menu ] difficulty-selection @ caseof       
+        200 nk:layout-row-push
           cleared @ "CLEARED: %3d %%" s:strfmt nk:TEXT_CENTERED "white" nk:label-colored
     nk:menubar-end ;
 
@@ -330,7 +358,7 @@ var font1
 
 : main-render
   {
-    bg: "brown",
+    bg: "DimGray",
     font: "font2",
     padding: [0,0],
     flags: [ @nk:WINDOW_NO_SCROLLBAR ]
