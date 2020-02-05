@@ -1,21 +1,21 @@
 \
 \  Simple Minesweeper game for 8th
 \
-"gfx/n0.png"         app:asset img:new var, zero-img
-"gfx/n1.png"         app:asset img:new var, one-img
-"gfx/n2.png"         app:asset img:new var, two-img
-"gfx/n3.png"         app:asset img:new var, three-img
-"gfx/n4.png"         app:asset img:new var, four-img
-"gfx/n5.png"         app:asset img:new var, five-img
-"gfx/n6.png"         app:asset img:new var, six-img
-"gfx/n7.png"         app:asset img:new var, seven-img
-"gfx/n8.png"         app:asset img:new var, eight-img
-"gfx/tile.png"       app:asset img:new var, tile-img
-"gfx/tinted1.png"    app:asset img:new var, tinted1-img
-"gfx/tinted2.png"    app:asset img:new var, tinted2-img
-"gfx/explosion.png"  app:asset img:new var, explosion-img
-"gfx/mine.png"       app:asset img:new var, mine-img
-"gfx/flag.png"       app:asset img:new var, flag-img
+"gfx/n0.png" app:asset img:new var, zero-img
+"gfx/n1.png" app:asset img:new var, one-img
+"gfx/n2.png" app:asset img:new var, two-img
+"gfx/n3.png" app:asset img:new var, three-img
+"gfx/n4.png" app:asset img:new var, four-img
+"gfx/n5.png" app:asset img:new var, five-img
+"gfx/n6.png" app:asset img:new var, six-img
+"gfx/n7.png" app:asset img:new var, seven-img
+"gfx/n8.png" app:asset img:new var, eight-img
+"gfx/tile.png" app:asset img:new var, tile-img
+"gfx/tinted1.png" app:asset img:new var, tinted1-img
+"gfx/tinted2.png" app:asset img:new var, tinted2-img
+"gfx/explosion.png" app:asset img:new var, explosion-img
+"gfx/mine.png" app:asset img:new var, mine-img
+"gfx/flag.png" app:asset img:new var, flag-img
 
 
 needs nk/gui
@@ -221,7 +221,10 @@ locals:
     true finished !
   then ;
 
-: draw0
+: draw-tile  \ image --
+  "x" w:@ TILESIZE n:* "y" w:@ TILESIZE n:* TILESIZE TILESIZE 4 a:close swap "white" nk:draw-image ;
+
+: draw-unselected-tile
   "x" w:@ TILESIZE n:* "y" w:@ TILESIZE n:* TILESIZE TILESIZE 4 a:close dup >r
   dup nk:hovered? finished @ not and if
     tinted1-img @
@@ -231,40 +234,7 @@ locals:
   "white" nk:draw-image
   handle-mouse-input ;
 
-: draw1
-  "x" w:@ TILESIZE n:* "y" w:@ TILESIZE n:* TILESIZE TILESIZE 4 a:close one-img @ "white" nk:draw-image ;
-
-: draw2
-  "x" w:@ TILESIZE n:* "y" w:@ TILESIZE n:* TILESIZE TILESIZE 4 a:close two-img @ "white" nk:draw-image ;
-
-: draw3
-  "x" w:@ TILESIZE n:* "y" w:@ TILESIZE n:* TILESIZE TILESIZE 4 a:close three-img @ "white" nk:draw-image ;
-
-: draw4
-  "x" w:@ TILESIZE n:* "y" w:@ TILESIZE n:* TILESIZE TILESIZE 4 a:close four-img @ "white" nk:draw-image ;
-
-: draw5
-  "x" w:@ TILESIZE n:* "y" w:@ TILESIZE n:* TILESIZE TILESIZE 4 a:close five-img @ "white" nk:draw-image ;
-
-: draw6
-  "x" w:@ TILESIZE n:* "y" w:@ TILESIZE n:* TILESIZE TILESIZE 4 a:close six-img @ "white" nk:draw-image ;
-
-: draw7
-  "x" w:@ TILESIZE n:* "y" w:@ TILESIZE n:* TILESIZE TILESIZE 4 a:close seven-img @ "white" nk:draw-image ;
-
-: draw8
-  "x" w:@ TILESIZE n:* "y" w:@ TILESIZE n:* TILESIZE TILESIZE 4 a:close eight-img @ "white" nk:draw-image ;
-
-: draw9
-  "x" w:@ TILESIZE n:* "y" w:@ TILESIZE n:* TILESIZE TILESIZE 4 a:close zero-img @ "white" nk:draw-image ;
-
-: draw10
-  "x" w:@ TILESIZE n:* "y" w:@ TILESIZE n:* TILESIZE TILESIZE 4 a:close explosion-img @ "white" nk:draw-image ;
-
-: draw11
-  "x" w:@ TILESIZE n:* "y" w:@ TILESIZE n:* TILESIZE TILESIZE 4 a:close mine-img @ "white" nk:draw-image ;
-
-: draw16
+: draw-flag-tile
   "x" w:@ TILESIZE n:* "y" w:@ TILESIZE n:* TILESIZE TILESIZE 4 a:close dup >r
   dup nk:hovered? finished @ not and if
     tinted2-img @
@@ -274,23 +244,23 @@ locals:
   "white" nk:draw-image
   handle-mouse-input ;
 
-[  ' draw0 ,
-   ' draw1 ,
-   ' draw2 ,
-   ' draw3 ,
-   ' draw4 ,
-   ' draw5 ,
-   ' draw6 ,
-   ' draw7 ,
-   ' draw8 ,
-   ' draw9 ,
-   ' draw10 ,
-   ' draw11 ,
+[  ' draw-unselected-tile ,
+   ( one-img @ draw-tile ) ,
+   ( two-img @ draw-tile ) ,
+   ( three-img @ draw-tile ) ,
+   ( four-img @ draw-tile ) ,
+   ( five-img @ draw-tile ) ,
+   ( six-img @ draw-tile ) ,
+   ( seven-img @ draw-tile ) ,
+   ( eight-img @ draw-tile ) ,
+   ( zero-img @ draw-tile ) ,
+   ( explosion-img @ draw-tile ) ,
+   ( mine-img @ draw-tile ) ,
    ' noop ,
    ' noop ,
    ' noop ,
    ' noop ,
-   ' draw16 ] var, drawtable
+   ' draw-flag-tile ] var, drawtable
 
 locals:
 : draw-tiles
