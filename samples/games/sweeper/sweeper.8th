@@ -1,3 +1,4 @@
+
 \
 \  Simple Minesweeper game for 8th
 \
@@ -51,6 +52,9 @@ BRDSZ 2 n:+ constant BRDSZI
 
 16 constant MARKED
 32 constant MINE
+
+10 constant EXPLOSION-IMAGE
+11 constant MINE-IMAGE
 
 var state-board
 var draw-board
@@ -168,7 +172,7 @@ locals:
 : mark  \ x y --
   2dup 2dup state-board @ mat:@ nip
   MARKED n:bor state-board @ mat:! drop
-  2dup draw-board @ mat:@ nip 
+  2dup draw-board @ mat:@ nip
   MARKED n:bor draw-board @ mat:! drop ;
 
 : unmark \ x y --
@@ -178,13 +182,13 @@ locals:
   MARKED n:bnot n:band draw-board @ mat:! drop ;
 
 : show-mines
-  ( >r ( r@ 2dup mine? if 11 set-board else 2drop then ) 1 BRDSZ loop rdrop ) 1 BRDSZ loop ;
+  ( >r ( r@ 2dup mine? if MINE-IMAGE set-board else 2drop then ) 1 BRDSZ loop rdrop ) 1 BRDSZ loop ;
 
 : handle-mouse-input  \ expects rect on r-stack
   finished @ if
     rdrop ;;
   then
-  
+
   nk:BUTTON_LEFT r@ false nk:clicked? if
     handle-click @ if
       "x" w:@ "y" w:@ 2dup selected-or-marked? not if
@@ -196,16 +200,16 @@ locals:
           cascade
         else
           show-mines
-          10 set-board
+          EXPLOSION-IMAGE set-board
           true finished !
         then
       then
     else
       true handle-click !
-    then  
+    then
   else
     nk:BUTTON_RIGHT r@ false nk:clicked? if
-      "x" w:@ "y" w:@ 2dup selected-or-marked? not if  
+      "x" w:@ "y" w:@ 2dup selected-or-marked? not if
         mark
       else
         2dup marked? if
@@ -213,7 +217,7 @@ locals:
         then
       then
     then
-  then  
+  then
   rdrop
   uncovered @ BRDSZ BRDSZ n:* mines @ n:- n:/ 100 n:* cleared !
   uncovered @ mines @ n:+ BRDSZ BRDSZ n:* n:= if
@@ -299,7 +303,7 @@ locals:
               "New" nk:TEXT_LEFT ( init-board  false handle-click ! )  nk:menu-item-label
               "Quit" nk:TEXT_LEFT ' bye nk:menu-item-label
           nk:menu-end then
-        [ ' easy-menu , ' normal-menu , ' hard-menu ] difficulty-selection @ caseof       
+        [ ' easy-menu , ' normal-menu , ' hard-menu ] difficulty-selection @ caseof
         200 nk:layout-row-push
           cleared @ "CLEARED: %3d %%" s:strfmt nk:TEXT_CENTERED "white" nk:label-colored
     nk:menubar-end ;
