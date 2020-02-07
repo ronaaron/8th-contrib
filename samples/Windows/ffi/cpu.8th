@@ -9,9 +9,9 @@ ns: cpu
 k32 drop
 "TPPP" "GetSystemTimes" func: GetSystemTimes
 
-B0 "L" ptr:pack var, idle
-B0 "L" ptr:pack var, kernel
-B0 "L" ptr:pack var, user
+0 "L" ptr:pack var, idle
+0 "L" ptr:pack var, kernel
+0 "L" ptr:pack var, user
 
 var last-idle
 var last-kernel
