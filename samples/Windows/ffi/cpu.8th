@@ -1,6 +1,6 @@
-/
-/ Simple CPU load display
-/
+\
+\ Simple CPU load display
+\
 
 ns: cpu
 
