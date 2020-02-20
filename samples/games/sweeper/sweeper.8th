@@ -1,4 +1,3 @@
-
 \
 \  Simple Minesweeper game for 8th
 \
@@ -18,8 +17,16 @@
 "gfx/mine.png" app:asset img:new var, mine-img
 "gfx/flag.png" app:asset img:new var, flag-img
 
+"snd/explosion.ogg" app:asset snd:new var, explosion-snd
+"snd/zero.ogg" app:asset snd:new var, zero-snd
 
 needs nk/gui
+requires sound
+
+384 constant WIDTH
+384 constant HEIGHT
+
+true constant WAIT-VSYNC
 
 true var, handle-click
 
@@ -53,6 +60,7 @@ BRDSZ 2 n:+ constant BRDSZI
 16 constant MARKED
 32 constant MINE
 
+9  constant ZERO-IMAGE
 10 constant EXPLOSION-IMAGE
 11 constant MINE-IMAGE
 
@@ -157,9 +165,12 @@ locals:
     q:pop
     a:open 2dup mines? dup >r
     0 n:= if
+      snd:ready? or not if 
+        zero-snd @ snd:play
+      then
       rdrop
       2dup
-      9 draw-board @ mat:! drop
+      ZERO-IMAGE draw-board @ mat:! drop
       1 uncovered n:+!
       uncover-queue
     else
@@ -201,6 +212,7 @@ locals:
         else
           show-mines
           EXPLOSION-IMAGE set-board
+          explosion-snd @ snd:play
           true finished !
         then
       then
@@ -267,7 +279,10 @@ locals:
    ' draw-flag-tile ] var, drawtable
 
 locals:
-: draw-tiles
+: draw-tiles+handle-input
+  nk:BUTTON_LEFT  [ 32, 32, 320, 320 ] false nk:clicked? not nk:BUTTON_LEFT nk:released? and if
+    true handle-click !
+  then
   ( "y" w:! ( dup "x" w:! "y" w:@ draw-board @ mat:@ nip drawtable @ swap caseof ) 1 BRDSZ loop ) 1 BRDSZ loop ;
 
 : easy-menu
@@ -308,25 +323,19 @@ locals:
           cleared @ "CLEARED: %3d %%" s:strfmt nk:TEXT_CENTERED "white" nk:label-colored
     nk:menubar-end ;
 
-var font1
-
 : new-win
   {
     name: "main",
-    wide: 384,
-    high: 384,
+    wide: @WIDTH,
+    high: @HEIGHT,
     bg: "palegreen",
     fonts: {
+      font1: ` 24 font:system ` ,
       font2: ["tahoma:24", "arial:24", "ubuntu:24"]
     },
     font: "font1",
     title: "Minesweeper"
   }
-  \ because we load font1 after this bit is compiled, we'll load it directly
-  "fonts" m:@
-    "font1" font1 @ m:!
-    drop
-
   \ invoke nk:win to create the outermost window from the JSON definition:
   nk:win ;
 
@@ -340,15 +349,11 @@ var font1
 
   nk:begin
     game-menu
-    draw-tiles
+    draw-tiles+handle-input
   nk:end  ;
 
 : app:main
-  \ in order to be cross-platform, let's use a system font chosen by our library:
-  font:system 0 a:_@
-  \ let it be 16 pixels high. Font string format is "/path/to/font.ttf:pixelsize".
-  \ There are other acceptable inputs to font:new, see the documentation:
-  "%s:16" s:strfmt font:new font1 !
   new-win
   init-board
-  ' main-render 200 nk:render-loop ;
+  WAIT-VSYNC nk:vsync
+  ' main-render 0 nk:render-loop ;
