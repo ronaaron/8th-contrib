@@ -9,12 +9,17 @@
 "gfx/alien2.png"   app:asset img:new var, alien2-img
 "gfx/amissile.png" app:asset img:new var, amissile-img
 
+"snd/explosion.ogg" app:asset snd:new var, explosion-snd
+"snd/missile.ogg"   app:asset snd:new var, missile-snd
+
 
 needs nk/gui
-
+requires sound
 
 800 constant WIDTH
 600 constant HEIGHT
+
+true constant WAIT-VSYNC
 
 32 constant TOP
 
@@ -212,6 +217,7 @@ var stars
   "y" m:@ dup MISSILE-HEIGHT n:+ player-y @ n:< not swap
   player-y @ PLAYER-HEIGHT n:+ n:> not and rot and
   swap "type" m:@ ALIEN-MISSILE n:= rot and if
+    explosion-snd @ snd:mix
     drop
     -1 lives n:+!
     null
@@ -230,6 +236,7 @@ var stars
     r@ "type" m:@ nip PLAYER-MISSILE n:= and
 
     if
+      explosion-snd @ snd:mix
       drop
       1 score n:+!
       null
@@ -299,6 +306,7 @@ var stars
   player-x @ PLAYER-WIDTH n:+ n:> not and swap
   "y" m:@ dup ALIEN-HEIGHT n:+ player-y @ n:< not swap
   player-y @ PLAYER-HEIGHT n:+ n:> not and rot and if
+    explosion-snd @ snd:mix
     drop
     -1 lives n:+!
     null
@@ -314,6 +322,7 @@ var stars
 
 : alien-shoot
   within-sights swap "missile-delay" m:@ swap >r secs n:< and if
+    missile-snd @ snd:mix
     missiles @ ALIEN-MISSILE r@ "x" m:@ MISSILE-WIDTH 2 n:/ n:+ swap "y" m:@ nip ALIEN-HEIGHT n:+ NONE DOWN add-missile drop
   then
   r> "missile-delay" secs n:1+ m:! ;
@@ -461,6 +470,7 @@ var stars
 
    SPACEBAR nk:key-down? if
     player-missile-delay @ 0 n:> not if
+      missile-snd @ snd:mix
       missiles @ PLAYER-MISSILE player-x @ MISSILE-WIDTH 2 n:/ n:+ player-y @ MISSILE-HEIGHT n:- 0 -1 add-missile drop
       MISSILE-DELAY player-missile-delay !
     then
@@ -558,25 +568,20 @@ var stars
   [ ' draw-title , ' draw-game , ' draw-get-ready , ' draw-gameover ] game-state @
   caseof ;
 
-var font1
 
 : new-win
   {
     name: "main",
-    wide: 800,
-    high: 600,
+    wide: @WIDTH,
+    high: @HEIGHT,
     bg: "palegreen",
     fonts: {
+      font1: ` 24 font:system ` ,
       font2: ["tahoma:24", "arial:24", "ubuntu:24"]
     },
     font: "font1",
-    title: "8th Nuklear 2D-game"
+    title: "Space 2019"
   }
-  \ because we load font1 after this bit is compiled, we'll load it directly
-  "fonts" m:@
-    "font1" font1 @ m:!
-    drop
-
   \ invoke nk:win to create the outermost window from the JSON definition:
   nk:win ;
 
@@ -593,13 +598,8 @@ var font1
   nk:end ;
 
 : app:main
-  \ in order to be cross-platform, let's use a system font chosen by our library:
-  font:system 0 a:_@
-  \ let it be 16 pixels high. Font string format is "/path/to/font.ttf:pixelsize".
-  \ There are other acceptable inputs to font:new, see the documentation:
-  "%s:16" s:strfmt font:new font1 !
   new-win
-  GAME-TITLE game-state !
-  secs current-time !
+  WAIT-VSYNC nk:vsync
   accumulator off
-  ' main-render 200 nk:render-loop ;
+  secs current-time !
+  ' main-render 0 nk:render-loop ;
