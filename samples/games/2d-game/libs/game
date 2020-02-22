@@ -1,0 +1,61 @@
+\
+\ Minimal game timing and state manager library for the 8th programmimg language.
+\
+ns: game
+
+
+0.01 var, dt
+0 var, game-state
+
+var frame-time
+var accumulator
+var new-time
+var current-time
+
+var update-events
+var draw-events
+
+: secs
+  d:ticks d:ticks/sec n:/ ;
+
+: dt@  \ -- n
+  dt @ ;
+
+: dt!  \ n --
+  dt ! ;
+
+: state@  \ -- n
+  game-state @ ;
+
+: state!  \ n --
+  game-state ! ;
+
+: init  \ vsync dt game-state update-events draw-events --
+  draw-events !
+  update-events !
+  game-state !
+  dt !
+  nk:vsync
+
+  accumulator off
+  secs current-time ! ;
+
+\ Delta timing routine.
+\ Uses fixed time step for update.
+\ Skips render frames if needed to keep up with the pace.
+: event-loop
+  secs new-time !
+  new-time @ current-time @ n:- frame-time !
+  new-time @ current-time !
+  frame-time @ accumulator n:+!
+  repeat
+    accumulator @ dt @ n:> not if
+      break
+    else
+      update-events @ game-state @
+      caseof
+      accumulator @ dt @ n:- accumulator !
+    then
+  again
+  draw-events @ game-state @
+  caseof ;
