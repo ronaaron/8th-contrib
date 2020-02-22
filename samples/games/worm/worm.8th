@@ -1,0 +1,371 @@
+\
+\ Worm game
+\
+\ Adapted for 8th from:
+\
+\ "Peliohjelmointi C++:lla: matopeli"
+\
+\  https://www.ohjelmointiputka.net/oppaat/opas.php?tunnus=cpp_mato_1
+\
+\  ( Yeah, it's Finnish language ;) )
+\
+\  Some of the graphics are used with permisssion.
+\
+"gfx/title.png"    app:asset img:new var, title-img
+"gfx/bg.png"       app:asset img:new var, bg-img
+"gfx/border.png"   app:asset img:new var, border-img
+"gfx/wormball.png" app:asset img:new var, worm-img
+"gfx/apple.png"    app:asset img:new var, apple-img
+"gfx/menu1.png"    app:asset img:new var, menu1-img
+"gfx/menu2.png"    app:asset img:new var, menu2-img
+
+"snd/eat.ogg"   app:asset snd:new var, eat-snd
+"snd/death.ogg" app:asset snd:new var, death-snd
+
+needs nk/gui
+needs game
+requires sound
+
+640 constant WIDTH
+480 constant HEIGHT
+
+true constant WAIT-VSYNC
+
+32 constant BLOCK-WIDTH
+32 constant BLOCK-HEIGHT
+WIDTH BLOCK-WIDTH n:/ constant BLOCKS-PER-ROW
+HEIGHT BLOCK-HEIGHT n:/ 2 n:- constant BLOCKS-PER-COLUMN
+16 constant RADIUS
+
+BLOCK-HEIGHT constant TOP
+HEIGHT BLOCK-HEIGHT n:- constant BOTTOM
+BLOCK-WIDTH constant LEFT
+WIDTH BLOCK-WIDTH n:- constant RIGHT
+
+\ Game states.
+0 constant GAME-MENU
+1 constant GAME-ON
+2 constant GAME-DELAY
+3 constant GAME-OVER
+
+0.05 constant DT
+
+
+ns: worm
+
+
+n:PI DT n:* constant turning-speed
+3.2 DT n:* constant phase-speed
+0.65 2 n:* RADIUS n:* constant movement
+0.07 constant crawling-swing
+
+var direction
+var phase
+
+var dx
+var dy
+var swing
+
+var worm
+
+: worm@
+  worm @ ;
+
+: xyc-xy0c  \ -- xyc xy0c
+  WIDTH 2 n:/ BLOCK-WIDTH 2 n:/ n:- HEIGHT 2 n:/ BLOCK-HEIGHT 2 n:/ n:-
+  2dup ;
+
+: add  \ worm x y x0 y0 -- worm
+  m:new
+  -rot
+  2 a:close "xy0" m:_!
+  -rot
+  2 a:close "xy"  m:_!
+  a:push ;
+
+: new
+  0 direction !
+  0 phase !
+  a:new
+  ( xyc-xy0c add ) 3 times
+  worm ! ;
+
+: move
+  nk:KEY_RIGHT nk:key-down? nk:KEY_LEFT nk:key-down? not and if
+    turning-speed direction n:+!
+  else
+    nk:KEY_LEFT nk:key-down? nk:KEY_RIGHT nk:key-down? not and if
+      turning-speed n:neg direction n:+!
+    then
+  then
+
+  phase-speed phase n:+!
+  repeat
+    phase @ 1 n:< not if
+       -1 phase n:+!
+       worm@ a:shift drop
+       -1 a:@ const
+       "xy0" m:@
+       1 a:@
+       direction @ n:sin movement n:* n:+ >r
+       0 a:@ nip
+       direction @ n:cos movement n:* n:+
+       r> 2 a:close "xy0" m:_!
+       a:push drop
+     else
+       break
+     then
+  again
+
+  worm@ -1 a:@
+  "xy0" m:@
+  0 a:@
+  direction @ n:cos movement n:* phase @ n:* n:+
+  swap 1 a:@ nip
+  direction @ n:sin movement n:* phase @ n:* n:+
+  2 a:close "xy" m:_! drop
+
+  (
+    dup >r
+    n:1+ a:@
+    "xy0" m:@ nip
+    r@ swap
+    0 a:@ >r
+    1 a:@ nip >r
+    a:@
+    "xy0" m:@
+    1 a:@ r> swap n:- dy !
+    0 a:@ r> swap n:- dx !
+    crawling-swing 2 phase @ n:* r> n:1+ n:+ n:PI n:* n:sin n:* swing !
+    1 a:@ phase @ dy @ n:* swing @ dx @ n:* n:+ n:+ >r
+    0 a:@ nip phase @ dx @ n:* swing @ dy @ n:* n:- n:+
+    r> 2 a:close "xy" m:_! drop
+   ) 0 2 pick a:len nip 2 n:- loop
+   drop ;
+
+: head-xy  \ -- [ x, y ]
+  worm@ -1 a:@ nip "xy" m:@ nip ;
+
+: head-xy0 \ -- [ x0, y0 ]
+  worm@ -1 a:@ nip "xy0" m:@ nip ;
+
+: distance?  \ [ x0, y0 ] [ x1, y1 ] -- n
+  ' n:- a:2map
+  ' n:sqr a:map
+  ' n:+ 0 a:reduce n:sqrt ;
+
+var too-close
+
+: collision?
+  worm@ -1 a:@
+  "xy" m:@
+  0 a:@ dup
+  LEFT RADIUS n:+ n:< if
+    drop 2drop true ;;
+  then
+  RIGHT RADIUS n:- n:> if
+    2drop true ;;
+  then
+  1 a:@ dup
+  TOP RADIUS n:+ n:< if
+    drop 2drop true ;;
+  then
+  BOTTOM RADIUS n:- n:> if
+    2drop true ;;
+  then
+  >r drop
+
+  false swap
+  true too-close !
+  ( a:@ "xy" m:@ nip r@ distance? RADIUS 2 n:* n:> if
+      false too-close !
+    else
+      too-close @ not if
+        nip
+        true
+        swap
+        break
+      then
+    then
+  ) 0 2 pick a:len 2 n:- nip loop-
+  drop
+  rdrop ;
+
+: draw
+  worm@ ( "xy" m:@ nip ( RADIUS n:- ) a:map a:open BLOCK-WIDTH BLOCK-HEIGHT 4 a:close worm-img @ "white" nk:draw-image ) a:each! drop ;
+
+
+ns: apple
+
+
+[ 0, 0 ] var, apple
+
+: apple@
+  apple @ ;
+
+: apple!
+  apple ! ;
+
+: random  \ -- [ x, y ]
+  rand-pcg n:abs WIDTH BLOCK-WIDTH 4 n:* n:- n:mod BLOCK-WIDTH 2 n:* n:+
+  rand-pcg n:abs HEIGHT BLOCK-HEIGHT 4 n:* n:- n:mod BLOCK-HEIGHT 2 n:* n:+
+  2 a:close ;
+
+: hit?
+  worm:head-xy apple@ worm:distance? RADIUS 2 n:* n:< if
+    true
+  else
+    false
+  then ;
+
+: draw
+  apple@ ( RADIUS n:- ) a:map a:open BLOCK-WIDTH BLOCK-HEIGHT 4 a:close apple-img @ "white" nk:draw-image ;
+
+
+ns: user
+
+
+var score
+
+: init-game
+  0 score !
+  apple:random apple:apple!
+  worm:new
+  GAME-ON game:state! ;
+
+0 var, menu-state
+[ @menu1-img, @menu2-img ] var, menu-images
+
+: init-menu
+  0 menu-state !
+  GAME-MENU game:state! ;
+
+var delay
+
+: init-delay
+  game:secs 2 n:+ delay !
+  GAME-DELAY game:state! ;
+
+: init-gameover
+  0 menu-state
+  GAME-OVER game:state! ;
+
+: draw-title
+  [ 0, 0, @WIDTH, @HEIGHT ] title-img @ "white" nk:draw-image ;
+
+: draw-menu
+  draw-title
+  [ 50, 100, 135, 129 ]
+  menu-images @ menu-state @ a:@ nip
+  "white"
+  nk:draw-image ;
+
+: update-menu
+  nk:KEY_UP nk:key-down? nk:KEY_DOWN nk:key-down? not and if
+    menu-state @ n:1- 0 1 n:clamp menu-state !
+  else
+    nk:KEY_DOWN nk:key-down? nk:KEY_UP nk:key-down? not and if
+      menu-state @ n:1+ 0 1 n:clamp menu-state !
+    then
+  then
+
+  nk:KEY_ENTER nk:key-down? if
+    [ ' init-game , ' bye ] menu-state @
+    caseof
+  then ;
+
+: draw-bg
+  [ 0, 0, @WIDTH, @HEIGHT ] bg-img @ "white" nk:draw-image ;
+
+: draw-borders
+  ( BLOCK-WIDTH n:* 0 BLOCK-WIDTH BLOCK-HEIGHT 4 a:close border-img @ "white" nk:draw-image ) 0 BLOCKS-PER-ROW n:1- loop
+  ( BLOCK-WIDTH n:* HEIGHT BLOCK-HEIGHT n:- BLOCK-WIDTH BLOCK-HEIGHT 4 a:close border-img @ "white" nk:draw-image ) 0 BLOCKS-PER-ROW n:1- loop
+  ( 0 swap BLOCK-HEIGHT n:* BLOCK-WIDTH BLOCK-HEIGHT 4 a:close border-img @ "white" nk:draw-image ) 1 BLOCKS-PER-COLUMN loop
+  ( WIDTH BLOCK-WIDTH n:- swap BLOCK-HEIGHT n:* BLOCK-WIDTH BLOCK-HEIGHT 4 a:close border-img @ "white" nk:draw-image ) 1 BLOCKS-PER-COLUMN loop ;
+
+: draw-game
+  draw-bg
+  draw-borders
+  worm:draw
+  apple:draw ;
+
+: update-game
+  worm:move
+  worm:collision? if
+    death-snd @ snd:mix
+    init-delay
+  then
+  apple:hit? if
+    eat-snd @ snd:mix
+    worm:worm @ worm:head-xy a:open worm:head-xy0 a:open worm:add drop
+    repeat
+      apple:random
+      dup
+      worm:head-xy worm:distance? RADIUS 4 n:* n:> if
+        break
+      else
+        drop
+      then
+    again
+    apple:apple!
+    1 score n:+!
+  then ;
+
+: update-delay
+  delay @ game:secs n:< if
+    init-gameover
+  then ;
+
+: draw-delay
+  draw-game ;
+
+: draw-gameover
+  draw-game
+  [ 50, 100, , 135, 129 ]
+  menu-images @ menu-state @ a:@ nip
+  "white"
+  nk:draw-image
+  score @ "SCORE: %d" s:strfmt
+  [ 50, 300, 580, 100 ] swap "font2" "white" "white" 60 nk:draw-text-high ;
+
+: update-gameover
+  update-menu ;
+
+: new-win
+  {
+    name: "main",
+    wide: @WIDTH,
+    high: @HEIGHT,
+    bg: "palegreen",
+    fonts: {
+      font1: ` 24 font:system ` ,
+      font2: ["tahoma:24", "arial:24", "ubuntu:24"]
+    },
+    font: "font1",
+    title: "Worm game"
+  }
+  \ invoke nk:win to create the outermost window from the JSON definition:
+  nk:win ;
+
+: main-render
+  {
+    bg: "black",
+    font: "font2",
+    padding: [0,0],
+    flags: [ @nk:WINDOW_NO_SCROLLBAR ]
+  }
+
+  nk:begin
+    game:event-loop
+  nk:end ;
+
+: app:main
+  new-win
+  init-menu
+  WAIT-VSYNC
+  DT
+  GAME-MENU
+  [ ' update-menu , ' update-game , ' update-delay , ' update-gameover ]
+  [ ' draw-menu , ' draw-game , ' draw-delay , ' draw-gameover ]
+  game:init
+  ' main-render 0 nk:render-loop ;
