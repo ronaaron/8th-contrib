@@ -14,6 +14,7 @@
 
 
 needs nk/gui
+needs game
 requires sound
 
 800 constant WIDTH
@@ -30,8 +31,6 @@ true constant WAIT-VSYNC
 1 constant GAME-ON
 2 constant GAME-GET-READY
 3 constant GAME-OVER
-
-var game-state
 
 32 constant PLAYER-WIDTH
 56 constant PLAYER-HEIGHT
@@ -75,11 +74,6 @@ var game-state
 
 0.01 constant DT
 
-var frame-time
-var accumulator
-var new-time
-var current-time
-
 var player-img
 var player-x
 var player-y
@@ -99,9 +93,6 @@ var alien-movement-delay
 var alien-state-delay
 
 var get-ready-time
-
-: secs
-  d:ticks d:ticks/sec n:/ ;
 
 : draw-filled-circle  \ [x y] r c --
   >r >r
@@ -267,13 +258,13 @@ var stars
   ) a:map= ( null? nip not ) a:filter missiles !
   lives @ n:> if
     lives @ not if
-      GAME-OVER game-state !
+      GAME-OVER game:state!
     else
       regroup-aliens
       missiles @ a:clear drop
       init-player
-      secs 2 n:+ get-ready-time !
-      GAME-GET-READY game-state !
+      game:secs 2 n:+ get-ready-time !
+      GAME-GET-READY game:state!
     then
   then
 
@@ -282,8 +273,8 @@ var stars
     init-aliens
     missiles @ a:clear drop
     init-player
-    secs 2 n:+ get-ready-time !
-    GAME-GET-READY game-state !
+    game:secs 2 n:+ get-ready-time !
+    GAME-GET-READY game:state!
   then ;
 
 : draw-missiles
@@ -321,11 +312,11 @@ var stars
   "state" state-table @ rand-pcg n:abs CHANCES n:mod LAST-STATE n:* r> n:+ a:@ nip m:! ;
 
 : alien-shoot
-  within-sights swap "missile-delay" m:@ swap >r secs n:< and if
+  within-sights swap "missile-delay" m:@ swap >r game:secs n:< and if
     missile-snd @ snd:mix
     missiles @ ALIEN-MISSILE r@ "x" m:@ MISSILE-WIDTH 2 n:/ n:+ swap "y" m:@ nip ALIEN-HEIGHT n:+ NONE DOWN add-missile drop
   then
-  r> "missile-delay" secs n:1+ m:! ;
+  r> "missile-delay" game:secs n:1+ m:! ;
 
 : alien-dive
   "last-state" m:@ DIVE-STATE n:= not if
@@ -381,8 +372,8 @@ var stars
   init-aliens
   missiles @ a:clear drop
   init-player
-  secs 2 n:+ get-ready-time !
-  GAME-GET-READY game-state ! ;
+  game:secs 2 n:+ get-ready-time !
+  GAME-GET-READY game:state! ;
 
 : title-menu
     nk:menubar-begin
@@ -458,8 +449,8 @@ var stars
     ANIM-DELAY alien-animation-delay !
   then
 
-  secs get-ready-time @ n:< not if
-    GAME-ON game-state !
+  game:secs get-ready-time @ n:< not if
+    GAME-ON game:state!
   then
 
   update-timers ;
@@ -518,17 +509,17 @@ var stars
         init-aliens
         missiles @ a:clear drop
         init-player
-        secs 2 n:+ get-ready-time !
-        GAME-GET-READY game-state !
+        game:secs 2 n:+ get-ready-time !
+        GAME-GET-READY game:state!
       else
         regroup-aliens
         missiles @ a:clear drop
         init-player
-        secs 2 n:+ get-ready-time !
-        GAME-GET-READY game-state !
+        game:secs 2 n:+ get-ready-time !
+        GAME-GET-READY game:state!
       then
       lives @ not if
-        GAME-OVER game-state !
+        GAME-OVER game:state!
       then
     then
     MOVE-DELAY alien-movement-delay !
@@ -547,27 +538,6 @@ var stars
     aliens @ ' update-alien-state a:map= drop
     STATE-DELAY alien-state-delay !
   then ;
-
-\ Delta timing routine.
-\ Uses fixed time step for update.
-\ Skips render frames if needed to keep up with the pace.
-: event-loop
-  secs new-time !
-  new-time @ current-time @ n:- frame-time !
-  new-time @ current-time !
-  frame-time @ accumulator n:+!
-  repeat
-    accumulator @ DT n:< if
-      break
-    else
-      [ ' noop , ' update-game , ' update-get-ready , ' noop ,  ' noop ] game-state @
-      caseof
-      accumulator @ DT n:- accumulator !
-    then
-  again
-  [ ' draw-title , ' draw-game , ' draw-get-ready , ' draw-gameover ] game-state @
-  caseof ;
-
 
 : new-win
   {
@@ -594,12 +564,16 @@ var stars
   }
 
   nk:begin
-    event-loop
+    game:event-loop
   nk:end ;
 
 : app:main
   new-win
-  WAIT-VSYNC nk:vsync
-  accumulator off
-  secs current-time !
+ \ VWAIT dt state update-events draw-events
+  WAIT-VSYNC
+  DT
+  GAME-TITLE
+  [ ' noop , ' update-game , ' update-get-ready , ' noop ,  ' noop ]
+  [ ' draw-title , ' draw-game , ' draw-get-ready , ' draw-gameover ]
+  game:init
   ' main-render 0 nk:render-loop ;
