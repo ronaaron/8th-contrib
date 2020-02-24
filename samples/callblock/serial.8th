@@ -1,0 +1,130 @@
+\ serial.8th  General purpose serial io words
+
+0x10 constant <DLE>
+0x03 constant <ETX>
+0x0d constant <CR>
+0x0a constant <LF>
+
+null var, port
+
+ : sio_setup	\ ( -- )
+	port @
+ {
+	"inxon":	false,
+	"outxon":	false,
+	"txcxoff":	false,
+	"outdsr":	false,
+	"eofchar":	0,
+	"errchar":	0,
+	"xoffchar":	19,
+	"xonchar":	17,
+	"baud":		38400,
+	"bytesize":	8,
+	"dtrctl":	1,
+	"rtsctl":	1,
+	"outcts":	false,
+	"stopbits":	1,
+	"faborterr":false,
+	"parity":	false,
+	"paritybits":	0,
+	"xonlim":	2048,
+	"xofflim":	512
+ }   sio:opts! drop 
+;
+
+
+: serial_init		\ ( --)
+	port @ null? nip
+	if			
+		com_port @ sio:open port !
+		sio_setup 
+	then ;
+		
+: close_serial
+	port @ null; 
+	sio:close 
+	null port ! ;	
+	
+: dump$  	\ ( s -- ) display strings for debugging
+	dup . cr
+	( "<" . . ">" . ) s:each! cr
+	;
+	
+: get_char?	\ ( -- "c",true | false) return next input as single char string,true OR false	
+	port @ "" s:clear 1 sio:read 				\ -- sio, s, n
+	rot drop							\ -- s, n
+	null? nip if drop false else true then
+	;
+	
+: get_char	\ ( -- "c" ) wait for and return next input char 
+	repeat 	get_char? 
+\			dup not if con:key? if drop "" con:key s:<+ true then then    \ for debugging
+	until! ;	
+	
+: put_char	\ ( c-- )	send single byte to sio
+		"" swap s:<+				\ single char string
+		port @ swap sio:write 2drop	;		\ write char to port
+
+: get_line				\  (  -- s )  read chars into string up to cr char
+ 	"" s:clear		 				
+	repeat
+		get_char s:+
+		dup 1 s:rsub			\ s,c --
+		"\r" s:= swap			\ f,s --
+		s:len 1 n:> 			\ f,s,f --
+		rot and					\ ignore single cr
+	until! 
+	s:ltrim s:rtrim	;			\ lose any leading LF from previous line
+	
+
+: send_string	\ ( s.. )		
+		port @ swap sio:write 2drop ;
+		
+0.2 var, dly 		
+		
+: clear_serial		\ ( -- ) read and discard all chars.	
+	cr " clear serial " . cr
+	false
+	repeat
+		get_char?
+		if . drop false
+		else 
+			if ;then
+			true
+			dly @ sleep 
+		then
+	again ;	
+	
+
+
+\ ================ terminal emulator for testing modems etc =====================	
+	
+\ switch modes with ctrl+t for text and ctrl+n for numbers in hex
+	
+true var, text_mode		\ displays recvd chars as text if True and numbers if False 
+
+: display_char	\ ( "c" -- )
+	text_mode @ if  . 
+				else hex 0 s:@ . drop " " . decimal 
+				then ;
+
+: term
+	serial_init
+	repeat
+		con:key? if 
+					con:key 
+					dup 27 n:= if drop ;; then											\ end if <ESC> key pressed
+					dup 20 n:= if drop true  text_mode ! "Text mode\n" . <CR> then  	\ 20 is ctrl+t  for text mode
+					dup 14 n:= if drop false text_mode ! "Hex mode\n"  . <CR> then  	\ 14 is ctrl+n  for hex mode
+					dup 16 n:= if drop <DLE> put_char <ETX> put_char     <CR> then		\ 16 is ctrl+p to send end of data string
+					dup putc							\ echo character to screen
+					dup 13 n:= if 10 putc then			\ add line feeds to cr
+					put_char					 	\ and send to serial port
+				 then
+		get_char? if display_char then		\ display recvd chars
+	again 
+	close_serial ;						
+.s	
+	
+
+			 

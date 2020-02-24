@@ -1,0 +1,60 @@
+\ audio.8th  D:\.8th\mylibs\libs\CallBlock\audio.8th
+
+\ audio files should be recorded in .wav format with 8000Hz sample rate and saved as unsigned 8-bit PCM
+\ see this link for details of recording a file
+\ https://iotbytes.wordpress.com/play-audio-file-on-phone-line-with-raspberry-pi/
+
+
+0 b:new var, sound_data 	\ this buffer holds processed sound file
+
+: add_byte	\ (buff,byte -- buff) add a byte to buffer
+	1 b:new true b:writable 0 rot b:! b:+ ;
+		
+: check_data	\ ( b,byte -- b)	\ add byte to buffer, twice if <DLE>
+	dup >r add_byte
+	r>  <DLE> n:= if <DLE> add_byte then ;
+		
+: read_sound_data		\ ( -- ) read sound file into buffer doubling up on all <DLE> bytes (DLE shielding)
+	0 b:new true b:writable				\ empty buffer for processed data
+	soundfile @ f:slurp					\ raw sound data
+	( check_data ) b:each!				\ copy to processed string but double up on <DLE> bytes
+	sound_data ! ;
+
+\ in order to prevent over run of modem buffer, need to break sound_data into chunks
+\ and send to modem with delay between chunks
+
+2048 var, chunk_size	
+0.25 var, chunk_delay		\ time to wait between sending each chunk_delay
+
+a:new var, sound_chunks		\ array of buffers
+	
+: split_sound		\ ( -- ) break sound_data into chunks
+	sound_chunks @ 0 sound_data @ a:! 	\ array on stack
+	repeat
+		a:pop b:len chunk_size @ n:> not	\ pop last element in array and check size
+		if a:push sound_chunks ! ;then		\ if less than or equal to chunk_size then push it back and we are done
+		chunk_size @ b:/					\ split last element into array of two elements
+		a:+									\ add the two new elements to main array
+	again ;	
+	
+
+: create_sound_data		
+	read_sound_data
+	split_sound ;
+
+
+: send_chunk	\ ( b -- ) send the sound buffer then pause for chunk_delay
+	send_string chunk_delay @ G:sleep ;
+
+: send_sound
+	sound_chunks @
+	( send_chunk )
+	a:each! drop
+	;
+		
+: audio_hang_up		\ (--) 			\ answer in voice mode, play soundfile, hang up
+	set_voice_mode
+	send_sound						\ send .wav file of recorded voice message
+	end_voice_call ;
+
+	

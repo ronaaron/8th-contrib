@@ -1,0 +1,53 @@
+\ modem commands
+
+needs sio\serial.8th
+
+true var, comms_ok
+
+: wait_response	 \ ("c" --)	  wait for single char string "c" followed by cr
+	repeat
+			get_line			\ returns at least one char
+			1 s:rsub			\ get last char before cr
+			over s:=
+	until!
+	drop
+	;
+
+: AT_command	\ ( s,r -- ) sends command string to modem and waits for response string r
+	swap send_string wait_response ;							
+	
+: off_hook	\ ( -- ) answer call
+	"ATA\r\n"  send_string ;	\ answer
+	
+: on_hook	\ ( -- ) hang up
+	clear_serial	\  noise picked up
+	"ATH0\r\n" send_string ;		\ hang up
+ 
+: modem_init	\ ( -- )
+	"ATZ\r\n"	send_string			\ reset to profile 0
+	"ATE0\r\n"  send_string			\ turn off echo
+	clear_serial
+	"ATV0\r\n"  "0" AT_command			\ returns single char numeric result to save traffic
+	"AT+FCLASS=0\r\n" "0" AT_command 	\ set mode 0=data, 1=fax, 8=voice
+	"AT&H0\r\n" "0" AT_command			\ set software flow control off
+	"AT+GCI=B4\r\n"	"0" AT_command		\ set modem to UK
+	"AT+VCID=1\r\n" "0" AT_command		\ enable formatted caller ID
+	;
+	
+
+: set_voice_mode
+	"AT+FCLASS=8\r\n" "0" AT_command 	\ set mode 0=data, 1=fax, 8=voice
+	"AT+VGT=255\r\n" "0" AT_command  	\ set speaker volume to maxat+dd 
+	"AT+VSM=128,8000\r\n" "0" AT_command  	\ select 8Khz sampling rate
+	"AT+VSD128,0\r\n" "0" AT_command  	\ Disable silence detection
+	"AT+VLS=1\r\n" "0" AT_command  		\ off_hook, modem connected to line
+	"AT+VTX\r\n" "1" AT_command  		\ select voice transmit mode
+	;
+	
+: end_voice_call
+		<DLE> put_char <ETX> put_char	\ signifies end of data transmission
+		"0" wait_response
+		"AT+VLS=0\r\n" "0" AT_command	\ disconnect
+		"AT+FCLASS=0\r\n" "0" AT_command 	\ set mode 0=data, 1=fax, 8=voice
+		on_hook ;
+		
