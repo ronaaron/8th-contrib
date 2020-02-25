@@ -1,0 +1,130 @@
+\ manage files in callblock  files.8th
+
+\ to blacklist all numbers starting with certain digits, add
+\ string to blacklist of form "*0161" which would block all numbers
+\ starting with "0161"
+
+\ NOTE: Do not add extra CR to end of number lists
+\ *********************************************
+
+[] var, whitelist		\ array of numbers in whitelist
+
+[] var, blacklist		\ array of numbers in blacklist
+
+[] var, loglist		\ array of lines in loglist
+
+100 var, maxlog		\ maximum number of log lines to hold
+
+: size_list		\ ( max_items, array -- ) delete first items until list no larger than max_items
+	repeat
+		2dup
+		a:len G:nip n:<			\ too long?
+		if 		a:shift drop 	\ if so delete first line and repeat
+		else 	2drop ;; 		\ otherwise all done
+		then
+	again ;
+	
+: (add_to_list)		\ (list,number$ -- list)
+		s:len  if  a:push 
+					else drop 	\ ignore empty strings
+					then ;
+	
+: add_to_list	\ (list,file,number$ -- list,file ) add number to array list
+	swap >r (add_to_list) r> ;	
+
+: load_whitelist	\ ( -- ) load numbers from file into memory
+	whitelist @ a:clear
+	whitefile @ f:open
+	( add_to_list )
+	f:eachline f:close drop ;
+	
+: load_blacklist	\ ( -- ) load numbers from file into memory
+	blacklist @ a:clear 
+	blackfile @ f:open
+	( add_to_list )
+	f:eachline f:close drop ;
+	
+: load_loglist	\ ( -- ) load numbers from file into memory
+	loglist @ a:clear 
+	logfile @ f:open
+	( add_to_list )
+	f:eachline f:close drop ;
+	
+: match?	\ ( list$,caller$ -- flag) note: list$ is one item from array
+	swap
+	0 s:@ 42 = if				\ asterisk? means wild card chars
+				s:len n:1- s:rsub	\ lose "*" 
+				s:len
+				rot			\ list$,len,call$
+				swap s:lsub	\ only compare first sub string
+			then
+	s:= ;
+				
+: in_list?		\  ( list,number$ -- flag )
+	( match? ) a:indexof
+	nip null? not nip ;
+
+: write_list	\ ( file,ix,number$ -- file )
+	nip   
+	f:write drop "\n" f:write drop ;
+	
+: save_blackfile	\ ( -- ) copy list from memory to file
+	blackfile @ f:open
+	0 f:seek						\ write from start of file
+	blacklist @ ( write_list )		\ array,items
+	a:each							\ add each number to file
+	drop
+	f:close ;	
+
+: save_whitefile	\ ( -- ) copy list from memory to file
+	whitefile @ f:open
+	
+	0 f:seek						\ write from start of file
+	whitelist @ ( write_list )		\ array,items
+	a:each							\ add each number to file
+	drop
+	f:close ;	
+	
+: add_lines 	\ file -- file)
+	loglist @ ( write_list )		\ array,items
+	a:each drop ; 	
+
+: save_logfile	\ ( -- ) copy list from memory to file
+	logfile @ f:create
+	0 f:seek						\ write from start of file
+	add_lines
+	f:close ;		
+
+: black	\ ( number$ -- ) add number to blacklist
+	load_blacklist
+	blacklist @ swap 2dup in_list? if 2drop ;; then	\ already in list
+	(add_to_list) drop							\ number to memory
+	save_blackfile ;							\ save to file 
+
+: white	\ ( number$ -- )  add number to whitelist
+	load_whitelist
+	whitelist @ swap 2dup in_list? if 2drop ;; then	\ already in list
+	(add_to_list) drop							\ number to memory
+	save_whitefile ;							\ save to file 
+
+: wr_log	\ ( log$ -- ) add string to end of log file and delete first line if more than maxlines	
+	logfile @ f:exists?
+	if load_loglist 			\ loads all lines into loglist array
+	   logfile @ f:rm drop		\ delete old file
+	then	
+	loglist @ swap (add_to_list)				\ append latest line to list in memory
+	maxlog @ swap size_list		\ ensure list not more than maxlog items
+	save_logfile ;						\ too many items
+
+
+: time_date$		\ ( -- s) return currrent time and date
+	"\t%H:%T %D %n %Y" d:new d:format ;
+	
+: add_to_log	\ ( number$ -- )	\ logs the string + time/date + contents of action
+	dup "PRIVATE" s:= if "\t" s:+ then	\ extra tab for short string
+	time_date$ s:+ 						\ add time and date
+	action @ s:+ "\r\n" s:+				\ add action taken
+	dup .								\ display on console
+	wr_log ;							\ and write to log file
+	
+	
