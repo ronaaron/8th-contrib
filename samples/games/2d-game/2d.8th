@@ -573,7 +573,7 @@ var stars
   WAIT-VSYNC
   DT
   GAME-TITLE
-  [ ' noop , ' update-game , ' update-get-ready , ' noop ,  ' noop ]
+  [ ' noop , ' update-game , ' update-get-ready , ' noop ]
   [ ' draw-title , ' draw-game , ' draw-get-ready , ' draw-gameover ]
   game:init
   ' main-render 0 nk:render-loop ;
