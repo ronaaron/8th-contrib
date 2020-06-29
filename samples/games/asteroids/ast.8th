@@ -1,0 +1,976 @@
+\
+\ Asteroids game for the 8th programming language
+\
+"gfx/space.png"  app:asset img:new var, space-img
+"gfx/ships.png"  app:asset img:new var, ships-img
+"gfx/rock.png"   app:asset img:new var, rocks-img
+"gfx/expl.png"   app:asset img:new var, flame-img
+"gfx/bullet.png" app:asset img:new var, bullet-img
+"gfx/menu1.png" app:asset img:new var, menu1-img
+"gfx/menu2.png" app:asset img:new var, menu2-img
+"gfx/menu3.png" app:asset img:new var, menu3-img
+
+"snd/title/title.ogg"  app:asset snd:new var, title-snd
+"snd/title/ending.ogg" app:asset snd:new var, ending-snd
+"snd/title/play.ogg"   app:asset snd:new var, music-snd
+"snd/shoot.ogg"        app:asset snd:new var, shoot-snd
+"snd/hspace.ogg"       app:asset snd:new var, hspace-snd
+"snd/explosion.ogg"    app:asset snd:new var, explosion-snd
+
+needs nk/gui
+needs nk/keyboard
+needs nk/sliders
+needs math/trigd
+needs games/state
+requires sound
+
+800 constant WIDTH
+600 constant HEIGHT
+
+64 constant LROCK-W
+64 constant LROCK-H
+32 constant LROCK-R
+32 constant MROCK-W
+32 constant MROCK-H
+16 constant MROCK-R
+16 constant SROCK-W
+16 constant SROCK-H
+8  constant SROCK-R
+
+30 constant SHIP-W
+30 constant SHIP-H
+15 constant SHIP-R
+
+32 constant FLAME-W
+32 constant FLAME-H
+
+8 constant BULLET-W
+8 constant BULLET-H
+4 constant BULLET-R
+
+8 constant FRACTURE-W
+8 constant FRACTURE-H
+
+30 constant SHOOT-DELAY
+2 constant ROTATION-SPEED-RIGHT
+360 ROTATION-SPEED-RIGHT n:- constant ROTATION-SPEED-LEFT
+2 constant MAX-SPEED
+
+32 constant SPACEBAR
+
+\ Game states.
+0 constant TITLE
+1 constant READY
+2 constant MAIN
+3 constant KILLED
+4 constant LEVELUP
+5 constant GAMEOVER
+6 constant PAUSED
+7 constant SETTINGS
+
+0.016 constant DT
+
+var ship-sprite
+var rock-sprite
+
+var ship-width
+var ship-height
+var ship-radius
+var rock-width
+var rock-height
+
+var player
+
+a:new var, lrocks
+a:new var, mrocks
+a:new var, srocks
+a:new var, bullets
+a:new var, flames
+a:new var, fractures
+
+var score
+var level
+var lives
+
+var shield-status
+var shield-energy
+
+var delay
+
+var menu-state
+
+{
+  bg: "black",
+  font: "font2",
+  padding: [0,0],
+  flags: [ @nk:WINDOW_NO_SCROLLBAR ],
+  wait-vsync: true,
+  volume: 0.25
+} constant main-render
+
+: center-rect  \ r1 r2 -- r3
+  nk:rect>size >r
+  dup nk:rect>pos
+  swap
+  nk:rect>size r@
+  ( n:- 2 n:/ ) a:2map
+  ' n:+ a:2map
+  r> a:+ ;
+
+: draw-circle  \ [x y] r n c --
+  >r >r >r
+  ( r@ n:- ) a:map
+  a:open r> 2 n:* dup 4 a:close r> r> nk:stroke-circle ;
+
+: lerp \ start end t -- n
+  >r swap 1 r@  n:- n:*
+  swap r> n:* n:+ ;
+
+: circleptx  \ x r deg -- x
+  n:cosd n:* n:+ ;
+
+: circlepty \ y r deg -- y
+  n:sind n:* n:- ;
+
+: rand  \ x -- rand(x-1)
+  >r rand-pcg n:abs r> n:mod ;
+
+: distance?  \ [ x0, y0 ] [ x1, y1 ] -- n
+  ' n:- a:2map
+  ' n:sqr a:map
+  ' n:+ 0 a:reduce n:sqrt ;
+
+: init-sprites
+  \ Load ship sprite, 360 rotations 10 rows, 36 images per row.
+  ships-img @ img:size
+  10 n:/ n:int ship-height ! 36 n:/ n:int ship-width !
+  drop
+  a:new
+  ( >r ( ships-img @ swap ship-width @ n:* n:int r@ ship-height @ n:* ship-width @ ship-height @ img:crop a:push ) 0 35 loop rdrop ) 0 9 loop
+  ship-sprite !
+
+  \ Load rock sprite, 360 rotations 10 rows, 36 images per row.
+  rocks-img @ img:size
+  10 n:/ n:int rock-height ! 36 n:/ n:int rock-width !
+  drop
+  a:new
+  ( >r ( rocks-img @ swap rock-width @ n:* n:int r@ rock-height @ n:* rock-width @ rock-height @ img:crop a:push ) 0 35 loop rdrop ) 0 9 loop
+  rock-sprite ! ;
+
+: draw-bg
+  [ 0, 0, @WIDTH, @HEIGHT ] space-img @ "white" nk:draw-image ;
+
+: draw-lives
+  ( 32 n:* 50 n:+ 12 SHIP-W SHIP-H 4 a:close ship-sprite @ 0 a:@ nip "white" nk:draw-image ) 0 lives @ n:1- loop ;
+
+: draw-killed-lives
+  ( 32 n:* 50 n:+ 12 SHIP-W SHIP-H 4 a:close ship-sprite @ player @ "angle" m:@ nip n:int a:@ nip "white" nk:draw-image ) 0 lives @ n:1- loop ;
+
+: draw-score
+  [ 480, 12, 380, 24 ] score @ level @ "Level: %4d        Score: %12d" s:strfmt "font1" "white" [ 255, 255, 255, 200 ] 24 nk:draw-text-high ;
+
+: draw-shield-bar
+  0 100 shield-energy @ lerp dup >r 1 n:< not if
+    50 48 r@ 12 4 a:close 0
+    r@ 75 100 n:between if
+      [0,255,0,64]
+    else
+      r@ 50 75 n:between if
+        [255,255,0,64]
+      else
+        r@ 25 50 n:between if
+          [255,165,0,64]
+        else
+          r@ 0 25 n:between if
+            [255,0,0,64]
+          then
+        then
+      then
+    then
+      nk:fill-rect
+  then
+  rdrop
+  [ 49, 47, 102, 14 ] 0 2 [255,255,255,64] nk:stroke-rect ;
+
+: update-shield
+  shield-status @ if
+    shield-energy @ 0.005 n:- 0 1 n:clamp dup shield-energy !
+    0 n:> not if
+      false shield-status !
+    then
+  else
+    shield-energy @ 0.0005 n:+ 0 1 n:clamp shield-energy !
+  then ;
+
+: add-rock \ rocklist x y w h --
+  m:new
+  swap "h" m:_!
+  swap "w" m:_!
+  swap "y" m:_!
+  swap "x" m:_!
+  "direction" 360 rand m:!
+  "speed" 0.9 level @ 0.1 n:* n:+ m:!
+  "angle" 360 rand m:!
+  "alive" true m:!
+  a:push
+  drop ;
+
+: init-rocks
+  lrocks @ a:clear drop
+  mrocks @ a:clear drop
+  srocks @ a:clear drop
+  ( lrocks @ WIDTH rand HEIGHT rand LROCK-W LROCK-H add-rock ) 5 times ;
+
+: draw-rock  \ rock --
+  "x" m:@ swap "w" m:@ swap >r 2 n:/ n:- r> "y" m:@ swap "h" m:@ swap >r 2 n:/ n:- r> "w" m:@ swap "h" m:@ swap >r 4 a:close rock-sprite @ r> "angle" m:@ nip n:int a:@ nip "white" nk:draw-image ;
+
+: draw-rocks
+  lrocks @ ' draw-rock a:each! drop
+  mrocks @ ' draw-rock a:each! drop
+  srocks @ ' draw-rock a:each! drop ;
+
+: move-rock \ rock --
+  dup "x" m:@ swap "speed" m:@ swap "direction" m:@ nip circleptx "x" m:_!
+  dup "x" m:@ WIDTH rot "w" m:@ nip 2 n:/ n:+ n:> if
+    "x" 0 2 pick "w" m:@ nip 2 n:/ n:- m:!
+  else
+    dup "x" m:@ 0 rot "w" m:@ nip 2 n:/ n:- n:< if
+      "x" WIDTH 2 pick "w" m:@ nip 2 n:/ n:+ m:!
+    then
+  then
+
+  dup "y" m:@ swap "speed" m:@ swap "direction" m:@ nip circlepty "y" m:_!
+  dup "y" m:@ HEIGHT rot "h" m:@ nip 2 n:/ n:+ n:> if
+    "y" 0 2 pick "h" m:@ nip 2 n:/ n:- m:!
+  else
+    dup "y" m:@ 0 rot "h" m:@ nip 2 n:/ n:- n:< if
+      "y" HEIGHT 2 pick "h" m:@ nip 2 n:/ n:+ m:!
+    then
+  then
+
+  "angle" m:@ 1 n:+ 360 n:mod "angle" m:_!
+  drop ;
+
+: move-rocks
+  lrocks @ ' move-rock a:each! drop
+  mrocks @ ' move-rock a:each! drop
+  srocks @ ' move-rock a:each! drop ;
+
+: add-flame  \ x y --
+  m:new
+  swap
+  "y" m:_!
+  swap
+  "x" m:_!
+  "scale" 0.2 m:!
+  "alive" 20 m:!
+  flames @ swap a:push drop ;
+
+: update-flame  \ flame --
+  "scale" m:@ 0.02 n:+ "scale" m:_!
+  "alive" m:@ n:1- "alive" m:_!
+  drop ;
+
+: update-flames
+  flames @ ' update-flame a:each!
+  ( "alive" m:@ nip 0 n:< not ) a:filter flames ! ;
+
+: draw-flame
+  "x" m:@ swap "scale" m:@ swap >r FLAME-W n:* 2 n:/ n:- r> "y" m:@ swap "scale" m:@ nip dup >r FLAME-H n:* 2 n:/ n:- r@ FLAME-W n:* r> FLAME-H n:* 4 a:close flame-img @ "white" nk:draw-image ;
+
+: draw-flames
+  flames @ ' draw-flame a:each! drop ;
+
+: add-fracture  \ x y --
+  m:new
+  swap "y" m:_!
+  swap "x" m:_!
+  "direction" 360 rand m:!
+  "angle" 360 rand m:!
+  "speed" 10 rand 4 n:+ m:!
+  "alive" 10 m:!
+  fractures @ swap a:push drop ;
+
+: move-fracture \ fracture --
+  dup "x" m:@ swap "speed" m:@ swap "direction" m:@ nip circleptx "x" m:_!
+  "x" m:@ WIDTH FRACTURE-W 2 n:/ n:+ n:> if
+    "x" 0 FRACTURE-W 2 n:/ n:- m:!
+  else
+    "x" m:@ 0 FRACTURE-W 2 n:/ n:- n:< if
+      "x" WIDTH FRACTURE-W 2 n:/ n:+ m:!
+    then
+  then
+  dup "y" m:@ swap "speed" m:@ swap "direction" m:@ nip circlepty "y" m:_!
+  "y" m:@ HEIGHT FRACTURE-H 2 n:/ n:+ n:> if
+    "y" 0 FRACTURE-H 2 n:/ n:- m:!
+  else
+    "y" m:@ 0 FRACTURE-H 2 n:/ n:- n:< if
+      "y" HEIGHT FRACTURE-H 2 n:/ n:+ m:!
+    then
+  then
+
+  "angle" m:@ 1 n:+ 360 n:mod "angle" m:_!
+
+  "alive" m:@ 0 n:> if
+    "alive" m:@ n:1- "alive" m:_!
+  then
+  drop ;
+
+: move-fractures
+  fractures @ ' move-fracture a:each!
+  ( "alive" m:@ nip ) a:filter fractures ! ;
+
+: draw-fracture  \ fracture --
+  "x" m:@ swap "y" m:@ swap >r FRACTURE-W rand 4 n:+ FRACTURE-H rand 4 n:+ 4 a:close rock-sprite @ r> "angle" m:@ nip n:int a:@ nip "white" nk:draw-image ;
+
+: draw-fractures
+  fractures @ ' draw-fracture a:each! drop ;
+
+: add-bullet  \ x y direction --
+  m:new
+  swap "direction" m:_!
+  swap "y" m:_!
+  swap "x" m:_!
+  "speed" 4 m:!
+  "alive" 90 m:!
+  bullets @ swap a:push drop ;
+
+: draw-bullet \ bullet --
+   "x" m:@ swap >r BULLET-W 2 n:/ n:- r> "y" m:@ nip BULLET-H 2 n:/ n:- BULLET-W BULLET-H 4 a:close bullet-img @ "white" nk:draw-image ;
+
+: draw-bullets
+  bullets @ ' draw-bullet a:each! drop ;
+
+: move-bullet  \ bullet --
+  dup "x" m:@ swap "speed" m:@ swap "direction" m:@ nip 90 n:- circleptx "x" m:_!
+  "x" m:@ WIDTH BULLET-W 2 n:/ n:+ n:> if
+    "x" 0 BULLET-W 2 n:/ n:- m:!
+  else
+    "x" m:@ 0 BULLET-W 2 n:/ n:- n:< if
+      "x" WIDTH BULLET-W 2 n:/ n:+ m:!
+    then
+  then
+  dup "y" m:@ swap "speed" m:@ swap "direction" m:@ nip 90 n:+ circlepty "y" m:_!
+  "y" m:@ HEIGHT BULLET-H 2 n:/ n:+ n:> if
+    "y" 0 BULLET-H 2 n:/ n:- m:!
+  else
+    "y" m:@ 0 BULLET-H 2 n:/ n:- n:< if
+      "y" HEIGHT BULLET-H 2 n:/ n:+ m:!
+    then
+  then
+
+  "alive" m:@ 0 n:> if
+    "alive" m:@ n:1- "alive" m:_!
+  else
+    drop
+    ;;
+  then
+
+  "x" m:@ swap "y" m:@ swap -rot 2 a:close >r false swap
+
+  lrocks @
+  ( "alive" m:@ if
+      "x" m:@ swap "y" m:@ swap -rot 2 a:close r@ distance? BULLET-R LROCK-R n:+ n:> not if
+        "alive" false m:! swap
+        "alive" 0 m:!
+        rot drop true swap
+        break
+      else
+        drop
+      then
+    else
+      drop
+    then
+  ) a:each! drop
+  swap
+  if
+    explosion-snd @ snd:mix
+    ( r@ a:open add-fracture ) 8 times drop
+    "x" m:@ swap "y" m:@ nip 2 a:close >r ( mrocks @ r@ a:open MROCK-W MROCK-H add-rock  ) 2 times rdrop
+    5 score n:+!
+    rdrop
+    ;;
+  then
+
+  \ Bullet on TOS
+  \ [ bullet-x, bullet-y ] on r-stack
+
+  false swap
+
+  mrocks @
+  ( "alive" m:@ if
+      "x" m:@ swap "y" m:@ swap -rot 2 a:close r@ distance? BULLET-R MROCK-R n:+ n:> not if
+        "alive" false m:! swap
+        "alive" 0 m:!
+        rot drop true swap
+        break
+      else
+        drop
+      then
+    else
+      drop
+    then
+  ) a:each! drop
+  swap
+  if
+    explosion-snd @ snd:mix
+    ( r@ a:open add-fracture ) 8 times drop
+    "x" m:@ swap "y" m:@ nip 2 a:close >r ( srocks @ r@ a:open SROCK-W SROCK-H add-rock ) 2 times rdrop
+    10 score n:+!
+    rdrop
+    ;;
+  then
+
+  \ Bullet on TOS
+  \ [ bullet-x, bullet-y ] on r-stack
+
+  false swap
+
+  srocks @
+  ( "alive" m:@ if
+      "x" m:@ swap "y" m:@ swap -rot 2 a:close r@ distance? BULLET-R SROCK-R n:+ n:> not if
+        "alive" false m:! swap
+        "alive" 0 m:!
+        rot drop true swap
+        break
+      else
+        drop
+      then
+    else
+      drop
+    then
+  ) a:each! drop
+  swap
+  if
+    explosion-snd @ snd:mix
+    ( r@ a:open add-fracture ) 8 times
+    2drop
+    15 score n:+!
+    rdrop
+    ;;
+  then
+
+  \ Bullet on TOS
+  \ [ bullet-x, bullet-y ] on r-stack
+
+  drop
+  rdrop ;
+
+: move-bullets
+  bullets @ ' move-bullet a:each!
+  ( "alive" m:@ nip ) a:filter bullets !
+  lrocks @ ( "alive" m:@ nip ) a:filter lrocks !
+  mrocks @ ( "alive" m:@ nip ) a:filter mrocks !
+  srocks @ ( "alive" m:@ nip ) a:filter srocks ! ;
+
+: init-killed
+  game:secs 1 n:+ delay !
+  KILLED game:state! ;
+
+: init-player
+  m:new
+  "x" WIDTH 2 n:/ m:!
+  "y" HEIGHT 2 n:/ m:!
+  "angle" 0 m:!
+  "dir" 0 m:!
+  "speed" 0 m:!
+  "flame-delay" 0 m:!
+  "shoot-delay" 0 m:!
+  true shield-status !
+  1 shield-energy !
+  player ! ;
+
+: draw-player
+  player @
+  "x" m:@ swap "y" m:@ swap >r 2 a:close 4 ship-sprite @ r> "angle" m:@ swap >r n:int a:@ nip "white" nk:draw-image-at
+  shield-status @ shield-energy @ 0 n:> and if
+    r> "x" m:@ swap "y" m:@ nip 2 a:close 15 2 "white" draw-circle
+  else
+    rdrop
+  then ;
+
+: move-player
+  player @
+
+  scan:LEFT nk:scancode? if
+    "angle" m:@ ROTATION-SPEED-LEFT n:+ 360 n:mod "angle" m:_!
+  then
+  scan:RIGHT nk:scancode? if
+    "angle" m:@ ROTATION-SPEED-RIGHT n:+ 360 n:mod "angle" m:_!
+  then
+
+  scan:UP nk:scancode? if
+    "angle" m:@ "dir" m:_!
+    "speed" m:@ 0.05 n:+ 0 MAX-SPEED n:clamp "speed" m:_!
+    "flame-delay" m:@ 0 n:> if
+      "flame-delay" m:@ n:1- "flame-delay" m:_!
+    else
+      "x" m:@ swap >r SHIP-W 2 n:/ r> "dir" m:@ swap >r 90 n:+ circleptx
+      r>
+      "y" m:@ swap >r SHIP-H 2 n:/ r> "dir" m:@ swap >r 90 n:- circlepty
+      add-flame
+      r> "flame-delay" 6 m:!
+    then
+  else
+    "speed" m:@ 0.025 n:- 0 MAX-SPEED n:clamp "speed" m:_!
+    "flame-delay" 0 m:!
+  then
+
+  "speed" m:@ 0 n:> if
+    "x" m:@ swap "speed" m:@ swap "dir" m:@ swap >r 90 n:- circleptx r> swap "x" m:_!
+    "x" m:@ WIDTH SHIP-W 2 n:/ n:+ n:> if
+      "x" 0 SHIP-W 2 n:/ n:- m:!
+    else
+      "x" m:@ 0 SHIP-W 2 n:/ n:- n:< if
+        "x" WIDTH SHIP-W 2 n:/ n:+ m:!
+      then
+    then
+    "y" m:@ swap "speed" m:@ swap "dir" m:@ swap >r 90 n:+ circlepty r> swap "y" m:_!
+    "y" m:@ HEIGHT SHIP-H 2 n:/ n:+ n:> if
+      "y" 0 SHIP-H 2 n:/ n:- m:!
+    else
+      "y" m:@ 0 SHIP-H 2 n:/ n:- n:< if
+        "y" HEIGHT SHIP-H 2 n:/ n:+ m:!
+      then
+    then
+  then
+
+  "shoot-delay" m:@ 0 n:> if
+    "shoot-delay" m:@ n:1- "shoot-delay" m:_!
+  else
+    scan:LCTRL  nk:scancode? if
+      shoot-snd @ snd:mix
+      "x" m:@ swap >r SHIP-W 2 n:/ r> "angle" m:@ swap >r 90 n:- circleptx
+      r>
+      "y" m:@ swap >r SHIP-H 2 n:/ r> "angle" m:@ swap >r 90 n:+ circlepty
+      r> "angle" m:@ swap >r add-bullet
+      r> "shoot-delay" SHOOT-DELAY m:!
+    then
+  then
+
+  scan:LSHIFT nk:scancode? "shield-delay" nk:get 0 ?: game:secs n:> not and if
+    hspace-snd @ snd:mix
+    WIDTH rand "x" m:_!
+    HEIGHT rand "y" m:_!
+    "shield-delay" game:secs n:1+ nk:set
+  then
+
+  scan:LALT nk:scancode? if
+    true shield-status !
+  then
+
+  update-shield
+  shield-status @ if
+    drop
+    ;;
+  then
+
+  "x" m:@ swap "y" m:@ swap -rot 2 a:close >r false swap
+
+  lrocks @
+  ( "alive" m:@ if
+      "x" m:@ swap "y" m:@ swap -rot 2 a:close r@ distance? SHIP-R LROCK-R n:+ n:> not if
+        "alive" false m:! swap
+        "alive" 0 m:!
+        rot drop true swap
+        break
+      else
+        drop
+      then
+    else
+      drop
+    then
+  ) a:each! drop
+  swap
+  if
+    explosion-snd @ snd:mix
+    ( r@ a:open add-fracture ) 8 times drop
+    "x" m:@ swap "y" m:@ nip 2 a:close >r ( mrocks @ r@ a:open MROCK-W MROCK-H add-rock  ) 2 times rdrop
+    rdrop
+    lrocks @ ( "alive" m:@ nip ) a:filter lrocks !
+    init-killed
+    ;;
+  then
+
+  \ Player on TOS
+  \ [ player-x, player-y ] on r-stack
+
+  false swap
+
+  mrocks @
+  ( "alive" m:@ if
+      "x" m:@ swap "y" m:@ swap -rot 2 a:close r@ distance? SHIP-R MROCK-R n:+ n:> not if
+        "alive" false m:! swap
+        "alive" 0 m:!
+        rot drop true swap
+        break
+      else
+        drop
+      then
+    else
+      drop
+    then
+  ) a:each! drop
+  swap
+  if
+    explosion-snd @ snd:mix
+    ( r@ a:open add-fracture ) 8 times drop
+    "x" m:@ swap "y" m:@ nip 2 a:close >r ( srocks @ r@ a:open SROCK-W SROCK-H add-rock ) 2 times rdrop
+    rdrop
+    mrocks @ ( "alive" m:@ nip ) a:filter mrocks !
+    init-killed
+    ;;
+  then
+
+  \ Player on TOS
+  \ [ player-x, player-y ] on r-stack
+
+  false swap
+
+  srocks @
+  ( "alive" m:@ if
+      "x" m:@ swap "y" m:@ swap -rot 2 a:close r@ distance? SHIP-R SROCK-R n:+ n:> not if
+        "alive" false m:! swap
+        "alive" 0 m:!
+        rot drop true swap
+        break
+      else
+        drop
+      then
+    else
+      drop
+    then
+  ) a:each! drop
+  swap
+  if
+    explosion-snd @ snd:mix
+    ( r@ a:open add-fracture ) 8 times drop
+    drop
+    rdrop
+    srocks @ ( "alive" m:@ nip ) a:filter srocks !
+    init-killed
+    ;;
+  then
+
+  \ player on TOS
+  \ [ player-x, player-y ] on r-stack
+
+  drop
+  rdrop ;
+
+: init-ready
+  init-player
+  bullets @ a:clear drop
+  game:secs 1 n:+ delay !
+  READY game:state! ;
+
+: draw-ready
+  draw-bg
+  draw-player
+  draw-rocks
+  draw-lives
+  draw-shield-bar
+  draw-score
+  [ 0, 0, @WIDTH, @HEIGHT ] [ 0, 0, 200, 160 ] center-rect "Get Ready!" "font1" "white" "white" 40 nk:draw-text-high ;
+
+: update-ready
+  move-rocks
+  game:secs delay @ n:< not if
+    MAIN game:state!
+  then ;
+
+: init-levelup
+  game:secs 2 n:+ delay !
+  LEVELUP game:state! ;
+
+: draw-levelup
+  draw-bg
+  draw-player
+  draw-bullets
+  draw-flames
+  draw-fractures
+  draw-lives
+  draw-shield-bar
+  draw-score
+  [ 0, 0, @WIDTH, @HEIGHT ] [ 0, 0, 200, 40 ] center-rect "Level Done!" "font1" "white" "white" 40 nk:draw-text-high ;
+
+: update-levelup
+  move-fractures
+  update-flames
+  game:secs delay @ n:< not if
+    1 level n:+!
+    init-rocks
+    init-ready
+  then ;
+
+: draw-killed
+  draw-bg
+  draw-player
+  draw-flames
+  draw-rocks
+  draw-fractures
+  draw-killed-lives
+  draw-shield-bar
+  draw-score ;
+
+: update-killed
+  game:secs delay @ n:< not if
+    -1 lives n:+!
+    lives @ 0 n:> not if
+      music-snd @ snd:stop
+      ending-snd @ true snd:loop snd:play
+      game:secs 10 n:+ delay !
+      GAMEOVER game:state!
+      ;;
+    else
+      init-ready
+      ;;
+    then
+  then
+  player @ "angle" m:@ 16 n:+ 360 n:mod "angle" m:_! drop
+  move-bullets
+  update-flames
+  move-rocks
+  move-fractures ;
+
+: init-game
+  0 score !
+  1 level !
+  3 lives !
+  init-rocks ;
+
+: init-settings
+  "volume" nk:get
+  "old-volume" swap nk:set 
+  SETTINGS game:state! ;
+
+: save-settings
+  0 menu-state !
+  TITLE game:state!
+  "asteroids.cfg" f:create
+  m:new "volume" dup nk:get m:! "wait-vsync" dup nk:get m:! >json f:write nip
+  "Can't create configuration file" thrownull
+  drop ;
+
+: settings-controls
+  nk:STATIC 200 1 nk:layout-row-begin
+    800 nk:layout-row-push
+      nk:widget 2drop
+  nk:layout-row-end
+  nk:STATIC 60 1 nk:layout-row-begin
+    800 nk:layout-row-push
+      "Game Settings" nk:TEXT_CENTERED "white" nk:label-colored
+  nk:layout-row-end
+  nk:STATIC 40 3 nk:layout-row-begin
+    200 nk:layout-row-push
+      "Volume:" nk:TEXT_RIGHT label
+    400 nk:layout-row-push
+      0 1 0.01 "volume" nk:slider-float
+    120 nk:layout-row-push
+      "volume" nk:get "%.2f" s:strfmt nk:TEXT_LEFT nk:label
+  nk:layout-row-end 
+  nk:STATIC 40 2 nk:layout-row-begin
+    120 nk:layout-row-push
+      widget 2drop
+    120 nk:layout-row-push
+     "Wait vsync" "wait-vsync" nk:get nk:option dup "wait-vsync" nk:get and not if
+       dup "wait-vsync" swap nk:set
+       game:vsync
+     else
+       drop
+     then       
+  nk:layout-row-end
+  nk:STATIC 20 1 nk:layout-row-begin
+    800 nk:layout-row-push
+      nk:widget 2drop
+  nk:layout-row-end
+  nk:STATIC 40 2 nk:layout-row-begin
+    120 nk:layout-row-push
+      nk:widget 2drop
+    120 nk:layout-row-push
+      "Done" ' save-settings nk:button-label  
+  nk:layout-row-end ;
+
+: draw-settings
+  draw-bg
+  draw-rocks
+  settings-controls ;
+
+: update-settings
+  "old-volume" nk:get "volume" nk:get n:= not if  
+    "volume" nk:get dup snd:volume
+    "old-volume" swap nk:set
+  then
+  move-rocks ;
+
+: draw-menu
+  [ 300, 250, 200, 300 ]
+  [ @menu1-img , @menu2-img , @menu3-img ] menu-state @ a:@ nip
+  "white"
+  nk:draw-image ;
+
+: draw-title
+  draw-bg
+  draw-rocks
+  [ 0, 0, @WIDTH, @HEIGHT ] [ 0, 0, 400, 300 ] center-rect "Asteroids" "font1" "white" "white" 100 nk:draw-text-high
+  draw-menu ;
+
+: update-menu
+  scan:UP nk:scancode? scan:DOWN nk:scancode? not and if
+    "up" nk:get false ?: not if
+      "up" true nk:set
+      menu-state @ n:1- 0 2 n:clamp menu-state !
+    then    
+  else
+    "up" false nk:set
+    scan:DOWN nk:scancode? scan:UP nk:scancode? not and if
+      "down" nk:get false ?: not if
+        "down" true nk:set
+        menu-state @ n:1+ 0 2 n:clamp menu-state !
+      then
+    else
+      "down" false nk:set
+    then
+  then ;
+
+: start-game
+  title-snd @ snd:stop
+  music-snd @ true snd:loop snd:play
+  init-game
+  init-ready ;
+
+: update-title
+  move-rocks
+  update-menu
+
+  scan:RETURN nk:scancode? if
+    [ ' start-game , ' init-settings , ' bye ] menu-state @
+    caseof
+  then ;
+
+: init-title
+  init-game
+  ending-snd @ snd:stop
+  title-snd @ true snd:loop snd:play
+  0 menu-state !
+  TITLE game:state! ;
+
+: draw-gameover
+  draw-bg
+  draw-rocks
+  draw-score
+  [ 0, 0, @WIDTH, @HEIGHT ] [ 0, 0, 200, 40 ] center-rect "GAME OVER" "font1" "white" "white" 40 nk:draw-text-high ;
+
+: update-gameover
+  move-rocks
+  game:secs delay @ n:< not if
+    music-snd @ snd:stop
+    init-title
+  then ;
+
+: level-done?
+  lrocks @ a:len nip 0 n:=
+  mrocks @ a:len nip 0 n:= and
+  srocks @ a:len nip 0 n:= and ;
+
+: draw-paused
+  draw-bg
+  draw-player
+  draw-bullets
+  draw-flames
+  draw-rocks
+  draw-fractures
+  draw-lives
+  draw-shield-bar
+  draw-score
+  [ 0, 0, @WIDTH, @HEIGHT ] [ 0, 0, 105, 40 ] center-rect "Paused" "font1" "white" "white" 40 nk:draw-text-high ;
+
+: update-paused
+  scan:P nk:scancode? if
+    "p" nk:get false ?: not if
+      "p" true nk:set
+      MAIN game:state!
+    then
+  else
+    "p" false nk:set 
+  then ;
+
+: draw
+  draw-bg
+  draw-player
+  draw-bullets
+  draw-flames
+  draw-rocks
+  draw-fractures
+  draw-lives
+  draw-shield-bar
+  draw-score ;
+
+: update
+  \ Pause game?
+  scan:P nk:scancode? if
+    "p" nk:get false ?: not if
+      "p" true nk:set  
+      PAUSED game:state!
+      ;;
+    then
+  else
+    "p" false nk:set  
+  then
+
+  move-player
+  move-bullets
+  update-flames
+  move-fractures
+  move-rocks
+  game:state@ KILLED n:= not if
+    level-done? if
+      init-levelup
+    then
+  then ;
+
+: init
+  main-render
+  "asteroids.cfg" f:slurp json> null? not if
+    m:+
+  else
+    drop
+    "asteroids.cfg" f:create
+    over m:new swap "volume" m:@ swap "wait-vsync" m:@ nip -rot "volume" m:_! swap "wait-vsync" m:_! >json f:write nip
+    "Can't create configuration file" thrownull
+    drop
+  then
+
+  "volume" m:@ snd:volume drop
+
+  init-sprites
+  init-title ;
+
+: new-win
+  {
+    name: "main",
+    wide: @WIDTH,
+    high: @HEIGHT,
+    resizable: false,
+    bg: "black",
+    fonts: {
+      font1: ` 24 font:system ` ,
+      font2: ["tahoma:24", "arial:24", "ubuntu:24"]
+    },
+    font: "font1",
+    title: "Asteroids"
+  }
+
+  nk:win ;
+
+: app:main
+  init
+  new-win
+  main-render "wait-vsync" m:@ nip
+  DT
+  TITLE
+  [ ' update-title , ' update-ready , ' update , ' update-killed , ' update-levelup , ' update-gameover , ' update-paused , ' update-settings ]
+  [ ' draw-title , ' draw-ready , ' draw , ' draw-killed , ' draw-levelup , ' draw-gameover , ' draw-paused , ' draw-settings ]
+  main-render
+  game:init
+  game:event-loop ;

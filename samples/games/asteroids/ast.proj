@@ -1,0 +1,33 @@
+{
+   "ignore-paths":   [".*"
+   ],
+   "ignore-files":   [
+   ],
+   "source":"ast.8th",
+   "droid-record-audio":true,
+   "droid-bt":true,
+   "app-name":"asteroids",
+   "xxx":null,
+   "gui":true,
+   "droid-modify-audio":true,
+   "app-ver":"1.0",
+   "stripall":true,
+   "strip":true,
+   "droid-loc-fine":true,
+   "windows":true,
+   "droid-network":true,
+   "droid-loc-coarse":true,
+   "id":"com.yourname.here.App",
+   "icon":"logo.png",
+   "osx":false,
+   "android":false,
+   "droid-camera":true,
+   "droid-bt-admin":true,
+   "ios":false,
+   "enc":true,
+   "droid-phone":true,
+   "linux":true,
+   "rpi":true,
+   "droid-internet":true,
+   "droid-extern":true
+}
