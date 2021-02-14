@@ -1,8 +1,16 @@
-\ modem commands
 
-needs sio\serial.8th
+: end_voice_call
+		<DLE> put_char <ETX> put_char	\ signifies end of data transmission
+		"0" wait_response
+		"AT+VLS=0\r\n" "0" AT_command	\ disconnect
+		"AT+FCLASS=0\r\n" "0" AT_command 	\ set mode 0=data, 1=fax, 8=voice
+		on_hook ;\ modem commands
+
+"modem" .cf
 
 true var, comms_ok
+
+modem? @ #if
 
 : wait_response	 \ ("c" --)	  wait for single char string "c" followed by cr
 	repeat
@@ -13,8 +21,15 @@ true var, comms_ok
 	drop
 	;
 
+#else
+
+: wait_response drop ;	\ DEBUG version
+
+#then
+
+
 : AT_command	\ ( s,r -- ) sends command string to modem and waits for response string r
-	swap send_string wait_response ;							
+	swap send_string 1 sleep wait_response ;							
 	
 : off_hook	\ ( -- ) answer call
 	"ATA\r\n"  send_string ;	\ answer
@@ -26,11 +41,12 @@ true var, comms_ok
 : modem_init	\ ( -- )
 	"ATZ\r\n"	send_string			\ reset to profile 0
 	"ATE0\r\n"  send_string			\ turn off echo
-	clear_serial
+\	clear_serial
 	"ATV0\r\n"  "0" AT_command			\ returns single char numeric result to save traffic
 	"AT+FCLASS=0\r\n" "0" AT_command 	\ set mode 0=data, 1=fax, 8=voice
 	"AT&H0\r\n" "0" AT_command			\ set software flow control off
 	"AT+GCI=B4\r\n"	"0" AT_command		\ set modem to UK
+	"AT+FLO=2\r\n" "0" AT_command		\ set hardware handshake
 	"AT+VCID=1\r\n" "0" AT_command		\ enable formatted caller ID
 	;
 	
@@ -45,9 +61,10 @@ true var, comms_ok
 	;
 	
 : end_voice_call
-		<DLE> put_char <ETX> put_char	\ signifies end of data transmission
+		<DLE><ETX> send_string			\ signifies end of data transmission
 		"0" wait_response
 		"AT+VLS=0\r\n" "0" AT_command	\ disconnect
 		"AT+FCLASS=0\r\n" "0" AT_command 	\ set mode 0=data, 1=fax, 8=voice
 		on_hook ;
+		
 		
