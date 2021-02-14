@@ -1,11 +1,13 @@
 \ manage files in callblock  files.8th
 
-\ to blacklist all numbers starting with certain digits, add
-\ string to blacklist of form "*0161" which would block all numbers
-\ starting with "0161"
+\ blacklist can use * and ? in number strings, e.g. to block all numbers starting with certain digits
 
-\ NOTE: Do not add extra CR to end of number lists
+\ NOTE: List files should end with single cr. Do not add extra CR to end of number lists
 \ *********************************************
+
+needs python\any
+
+"files" .cf 
 
 [] var, whitelist		\ array of numbers in whitelist
 
@@ -26,12 +28,12 @@
 	
 : (add_to_list)		\ (list,number$ -- list)
 		s:len  if  a:push 
-					else drop 	\ ignore empty strings
-					then ;
+				else drop 	\ ignore empty strings
+				then ;
 	
 : add_to_list	\ (list,file,number$ -- list,file ) add number to array list
 	swap >r (add_to_list) r> ;	
-
+	
 : load_whitelist	\ ( -- ) load numbers from file into memory
 	whitelist @ a:clear
 	whitefile @ f:open
@@ -49,21 +51,13 @@
 	logfile @ f:open
 	( add_to_list )
 	f:eachline f:close drop ;
-	
-: match?	\ ( list$,caller$ -- flag) note: list$ is one item from array
-	swap
-	0 s:@ 42 = if				\ asterisk? means wild card chars
-				s:len n:1- s:rsub	\ lose "*" 
-				s:len
-				rot			\ list$,len,call$
-				swap s:lsub	\ only compare first sub string
-			then
-	s:= ;
-				
-: in_list?		\  ( list,number$ -- flag )
-	( match? ) a:indexof
-	nip null? not nip ;
 
+\ NOTE: a:any ( a,w -- a,T) . The SED for w is a,w,item -- a,w,a,T so 3 pick copies the target string to compare
+\ with array item.	
+
+: in_list?		\  ( number$,list -- number$,flag )
+	( 3 pick swap s:globmatch ) a:any nip ;			\ swap reqd because globmatch only works one way for wildcards
+	
 : write_list	\ ( file,ix,number$ -- file )
 	nip   
 	f:write drop "\n" f:write drop ;
@@ -78,7 +72,6 @@
 
 : save_whitefile	\ ( -- ) copy list from memory to file
 	whitefile @ f:open
-	
 	0 f:seek						\ write from start of file
 	whitelist @ ( write_list )		\ array,items
 	a:each							\ add each number to file
@@ -95,16 +88,16 @@
 	add_lines
 	f:close ;		
 
-: black	\ ( number$ -- ) add number to blacklist
+: >black	\ ( number$ -- ) add number to blacklist
 	load_blacklist
-	blacklist @ swap 2dup in_list? if 2drop ;; then	\ already in list
-	(add_to_list) drop							\ number to memory
+	blacklist @  in_list? if drop ;; then	\ already in list
+	blacklist @ swap (add_to_list) drop							\ number to memory
 	save_blackfile ;							\ save to file 
 
-: white	\ ( number$ -- )  add number to whitelist
+: >white	\ ( number$ -- )  add number to whitelist
 	load_whitelist
-	whitelist @ swap 2dup in_list? if 2drop ;; then	\ already in list
-	(add_to_list) drop							\ number to memory
+	whitelist @  in_list? if drop ;; then	\ already in list
+	whitelist @ swap (add_to_list) drop							\ number to memory
 	save_whitefile ;							\ save to file 
 
 : wr_log	\ ( log$ -- ) add string to end of log file and delete first line if more than maxlines	
@@ -121,7 +114,6 @@
 	"\t%H:%T %D %n %Y" d:new d:format ;
 	
 : add_to_log	\ ( number$ -- )	\ logs the string + time/date + contents of action
-	dup "PRIVATE" s:= if "\t" s:+ then	\ extra tab for short string
 	time_date$ s:+ 						\ add time and date
 	action @ s:+ "\r\n" s:+				\ add action taken
 	dup .								\ display on console
