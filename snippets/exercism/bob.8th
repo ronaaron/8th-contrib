@@ -1,0 +1,40 @@
+: is_question \ s -- b
+	s:trim 1 s:rsub "?" s:=
+;
+
+: is_silence \ s -- b
+	s:trim s:len 0 n:=
+;
+
+: is_shouting \ s -- b
+	dup
+	dup
+	/[A-Z]/ r:/ a:len nip 0 n:> \ s1 s2 -- s1 b
+	swap
+	/[a-z]/ r:/ a:len nip 0 n:= \ s1 b -- b b
+	and
+;
+
+: bob \ s -- s
+	is_silence if
+		"Fine. Be that way!"
+	else
+		dup
+		is_shouting swap is_question and if
+			"Calm down, I know what I'm doing!"
+		else
+			dup
+			is_shouting swap is_question not and if 
+				"Whoa, chill out!"
+			else
+				dup
+				is_shouting not swap is_question and if
+					"Sure."
+				else
+					"Whatever."
+				then
+			then
+		then
+	then
+	nip
+;

@@ -1,0 +1,105 @@
+: section_break \ 
+	"-" 30 s:* . cr
+;
+
+"bob.8th" f:include
+: me_bob \ s --
+	dup bob swap "Me: '%s'\nBob: '%s'" s:strfmt . cr cr
+;
+
+"    " me_bob
+"" me_bob
+"1, 2, 3 GO!" me_bob
+"1, 2, 3" me_bob
+"4?" me_bob
+"Does this cryogenic chamber make me look fat?\nno" me_bob
+"Does this cryogenic chamber make me look fat?" me_bob
+"Ending with ? means a question." me_bob
+"I HATE YOU" me_bob
+"It's OK if you don't want to go to the DMV." me_bob
+"Let's go make out behind the gym!" me_bob
+"Tom-ay-to, tom-aaaah-to." me_bob
+"WATCH OUT!" me_bob
+"WHAT THE HELL WERE YOU THINKING?" me_bob
+"Wait! Hang on. Are you going to be OK?" me_bob
+"You are, what, like 15?" me_bob
+"ZOMG THE %^*@#$(*^ ZOMBIES ARE COMING!!11!!1!" me_bob
+
+section_break
+
+"hamming.8th" f:include
+
+: hamming_of \ s s -- n|null
+	2dup
+	"Hamming distance of '%s' '%s' = " s:strfmt . 
+	distance null?
+	if 
+		"Invalid input" . cr
+		drop
+	else 
+		. cr
+	then
+;
+
+"" "" hamming_of
+"A" "A" hamming_of
+"GGACTGAAATCTG" "GGACTGAAATCTG" hamming_of
+"G" "T" hamming_of
+"GGACGGATTCTG" "AGGACGGATTCT" hamming_of
+"" "G" hamming_of
+"AATG" "AAA" hamming_of
+"ATA" "AGTG" hamming_of
+"G" "" hamming_of
+
+section_break
+
+"hello-world.8th" f:include
+hello-world . cr
+
+section_break
+
+"leap.8th" f:include
+
+: leap_of \ n --
+	dup "Is %d a leap year? " s:strfmt . leap-year? 
+	if 
+		"Yes." . cr
+	else
+		"No." . cr 
+	then 
+;
+
+1800 leap_of
+1900 leap_of
+1970 leap_of
+1800 leap_of
+2015 leap_of
+2100 leap_of
+1960 leap_of
+1996 leap_of
+2000 leap_of
+2400 leap_of 
+
+section_break
+
+"two-fer.8th" f:include
+
+: two-fer_of \
+	"Two fer of " . 
+	depth not 
+	if 
+		"nothing = '" .
+		two-fer . "'" . cr
+	else
+		dup . " = " . 
+		"'" . two-fer . "'" . cr 
+	then
+;
+
+two-fer_of
+"Jedoon" two-fer_of
+"Hazelelponi" two-fer_of
+
+section_break
+
+bye
