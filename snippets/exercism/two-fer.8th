@@ -1,0 +1,8 @@
+: two-fer \ * -- s
+  depth 1 n:= 
+  if
+    "One for " swap s:+ ", one for me." s:+ 
+  else
+    "One for you, one for me."
+  then
+;

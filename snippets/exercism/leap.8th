@@ -1,0 +1,6 @@
+\ Based on FORTH version at http://rosettacode.org/wiki/Leap_year#Forth
+: leap-year? \ n -- b
+        dup 400 n:mod not if drop true ;; then
+        dup 100 n:mod not if drop false ;; then
+        4 n:mod not
+;

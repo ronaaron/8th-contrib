@@ -1,0 +1,15 @@
+: distance \ s1 s2 | n
+	null s:/ a:len \ s1 a2 n2
+	rot \ a2 n2 s1
+	null s:/ a:len \ a2 n2 a1 n1
+	rot \ a2 a1 n2 n1
+	n:= not \ a2 a1 b
+	if 
+		null nip nip
+	else \ a2 a1
+		0 -rot 
+		( s:= not nip if n:1+ then ) 
+		a:2each rot
+		nip nip
+	then
+;

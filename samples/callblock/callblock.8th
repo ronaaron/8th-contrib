@@ -1,1 +1,232 @@
-dummy
+\ main Call Blocker file   callBlock.8th
+
+\ tv PC
+ "COM5" var, com_port	\ USRobotics		
+ 
+\ "COM3" var, com_port	\ Soundblaster		
+
+\ Desktop PC
+\ "COM1" var, com_port	
+
+\ flags for conditional compilation
+
+true var, modem?			\ use keyboard to fake serial input from a modem if false
+
+\ debugging words ********************
+
+ var current_file
+
+: .cf dup current_file ! "\r\ncompiling " swap s:+ . ;  \ ( filename$ -- )
+
+"callblock" .cf
+
+: .ln "ok up to line " . . " in " current_file @ s:+ . cr ;
+
+: .debug	\ ( line -- ) display file and line number with debugging code at compile time
+	">>>>>>DEBUG code in file " current_file @ s:+ " at line " s:+ . . cr ;
+
+
+: dump$  	\ ( s -- ) display strings for debugging in text and numbers
+	dup . cr
+	( "<" . . ">" . ) s:each! cr
+	decimal ;
+
+
+
+: t:status		\ display task status
+		t:list ( cr t:done? if "stopped\t" else "running\t" then . . )
+		a:each! drop ;
+						   
+' t:status onexit
+						   
+\ ********************************
+
+app:8thdir "DATA\/" s:+ var, datadir
+
+
+
+datadir @ 
+dup	"LOG.TXT"		s:+ var, logfile		
+dup	"WHITELIST.TXT"	s:+ var, whitefile		
+dup	"BLACKLIST.TXT"	s:+ var, blackfile		
+dup	"BLOCKED3.WAV" 	s:+ var, soundfile	
+drop
+
+ "" var, action			\ string to describe how call was dealt with	
+ 
+ 
+ var cbtask_id 
+ var srl_task_id
+ 
+: kill_tasks
+	cbtask_id @ 0 t:kill		
+	srl_task_id @ 0 t:kill ;
+	
+
+needs callblock\serial.8th  
+needs callblock\modem.8th
+needs callblock\files.8th
+needs callblock\audio.8th  \ plays sound file to blocked callers if voice == True.
+needs python\any
+
+
+
+\ needs callblock\test.8th
+
+"callblock" .cf
+
+\ Modem returns following lines on an incoming call
+
+\ RING
+\
+\ DATE=0417
+\ 
+\ TIME=2232
+\
+\ NMBR=07910414576
+\
+\ RING
+\ 
+\ RING .......
+\
+\ ------------ OR if number witheld ----------------
+\
+\ DATE=0417
+\ 
+\ TIME=2232
+\
+\ NMBR=PRIVATE  or P
+\
+\ RING
+\ 
+\ RING .......
+\ *********************************************
+
+
+
+true var, voice			\ true for audio message, false for simple hang up
+
+: fax_hang_up		\ ( -- )		\ answer in data mode (sounds like fax), wait then hang up
+	15 G:sleep
+	on_hook ;
+	
+: hang_up
+		"Hanging up" . cr
+		voice @ if audio_hang_up else fax_hang_up then ;
+ 
+: von true voice ! ;
+: voff false voice ! ;
+ 
+"0" var, last_number	\ stores the most recent calling number
+
+
+\ add last number to white or black lists	
+: >w	last_number @ >white ;
+: >b	last_number @ >black ;		
+	
+: init	\ ( -- )
+	load_whitelist
+	load_blacklist
+	load_sound_data
+	serial_init		\ setup serial port
+	start_serial_task
+	modem_init ;	\ setup modem	
+  
+: wait_for_call		\ ( -- s) get number string from next incoming call
+		"waiting for call" . time_date$ . cr
+		repeat
+			get_line 
+			dup 4 s:lsub "NMBR" s:=
+			if							\ number found?
+			  0 5 s:-		 		\ lose "NMBR=" 
+			  ;;
+			else
+				drop
+			then
+		again
+		;
+
+: process_private		\ (  -- ) number witheld
+	 ;
+
+: process_unknown		\ ( n$  -- ) new number
+	 drop ;
+	
+: check_number	 \ ( number$ -- )
+	
+	\ do nothing if number is on whitelist
+	whitelist @ in_list? 
+	if drop "\tAccept" action ! ;; then
+	
+	\ hang up if number on blacklist
+	blacklist @ in_list?
+	if drop "\tBlocked" action ! hang_up ;; then 
+
+	\ that leaves withheld and new/unknown numbers
+	dup "--PRIVATE--" s:= if  drop "\tWitheld" action ! process_private ;; then
+	
+	\ that leaves unknown
+	"\tUnknown" action ! process_unknown ;
+
+: process_number	\ (number$ -- ) store and process number 
+	s:len 1 n:< if drop ;then	\ ignore empty string
+	0 s:@ 80 n:=			\ does string start with "P" 
+	if drop "--PRIVATE--" then
+	s:len 11 n:= G:not		\ not a valid length?
+	if 	
+		"Invalid "			\ prepend "Invalid " to strings not 11 digits long
+		swap s:+
+	then
+	dup last_number !		\ save number for in-call action
+	dup check_number		\ process number according to type
+	add_to_log				\ add call to log file 
+	 ;
+	
+\ false var, task_end	
+	
+: cbtask	\ ( -- ) main loop run as a task
+	"Starting call blocker\t" time_date$ s:+ "\r\n" s:+ 
+	dup . 						\ start message to console
+	wr_log						\ and log file
+	init
+	repeat
+		wait_for_call			\ returns with number$ on stack
+		process_number
+		clear_serial			\ discard any chars returned from modem
+	again
+	;
+
+modem? @ #if
+		
+: startcb		\ ( -- )
+	' cbtask t:task 
+	cbtask_id !
+	;
+
+: stopcb		\ ( -- )
+	cbtask_id @ 1 t:kill 
+	"Stopping call blocker\t" time_date$ s:+ "\r\n" s:+ 
+	dup . 
+	wr_log
+	on_hook
+	close_serial
+	"...stopped" . cr .s ;
+
+: restart	stopcb startcb ;
+
+#else
+
+: startcb		\ ( -- )
+	' cbtask t:task cbtask_id !		\ start cb task_end
+	-1 sleep 						\ sleep REPL to avoid keyboard conflict
+	cr " Exit program" .
+	kill_tasks ;	
+	
+#then	
+
+cr current_file @ . " done" . 	
+.s
+von
+\ startcb
+
+	
